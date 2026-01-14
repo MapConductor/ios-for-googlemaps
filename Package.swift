@@ -17,7 +17,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/MapConductor/ios-sdk-core", from: "1.0.0"),
-        .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "9.0.0"),
+        .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "10.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
