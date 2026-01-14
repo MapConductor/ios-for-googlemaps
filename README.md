@@ -23,6 +23,7 @@ This module fulfills that role for Google Maps.
 
 ## Role in the architecture
 
+```
 ┌────────────────────────────────────────────┐
 │ Application / App Logic                    │
 ├────────────────────────────────────────────┤
@@ -42,6 +43,7 @@ This module fulfills that role for Google Maps.
 ├────────────────────────────────────────────┤
 │ Google Maps SDK for iOS                    │
 └────────────────────────────────────────────┘
+```
 
 In this architecture:
 
