@@ -25,7 +25,7 @@ let package = Package(
         .target(
             name: "MapConductorForGoogleMaps",
             dependencies: [
-                .product(name: "MapConductorCore", package: "mapconductor-core"),
+                .product(name: "MapConductorCore", package: "ios-sdk-core"),
                 .product(name: "GoogleMaps", package: "ios-maps-sdk"),
             ],
         ),
