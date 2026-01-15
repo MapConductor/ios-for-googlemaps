@@ -5,6 +5,7 @@ import UIKit
 @MainActor
 final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSPolygon> {
     private weak var mapView: GMSMapView?
+    private let interpolationCache = InterpolationCache<GMSPath>(countLimit: 64)
 
     init(mapView: GMSMapView?) {
         self.mapView = mapView
@@ -13,12 +14,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
 
     override func createPolygon(state: PolygonState) async -> GMSPolygon? {
         guard let mapView else { return nil }
-        let geoPoints = resolvedPoints(for: state)
-
-        let path = GMSMutablePath()
-        for point in geoPoints {
-            path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
-        }
+        let path = resolvedPath(for: state, mapView: mapView)
 
         let polygon = GMSPolygon(path: path)
         polygon.strokeColor = state.strokeColor
@@ -39,13 +35,8 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         let prevFinger = prev.fingerPrint
 
         if finger.points != prevFinger.points || finger.geodesic != prevFinger.geodesic {
-            let geoPoints = resolvedPoints(for: current.state)
-
-            let path = GMSMutablePath()
-            for point in geoPoints {
-                path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
-            }
-            polygon.path = path
+            guard let mapView else { return polygon }
+            polygon.path = resolvedPath(for: current.state, mapView: mapView)
             polygon.geodesic = current.state.geodesic
         }
 
@@ -68,14 +59,42 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         entity.polygon?.map = nil
     }
 
-    private func resolvedPoints(for state: PolygonState) -> [GeoPointProtocol] {
-        let interpolated: [GeoPointProtocol] = state.geodesic
-            ? createInterpolatePoints(state.points, maxSegmentLength: 1000.0)
-            : createLinearInterpolatePoints(state.points)
+    private func resolvedPath(for state: PolygonState, mapView: GMSMapView) -> GMSPath {
+        func rawPath(_ points: [GeoPointProtocol]) -> GMSPath {
+            let path = GMSMutablePath()
+            for point in points {
+                path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+            }
+            return path
+        }
+
+        if !state.geodesic {
+            return rawPath(createLinearInterpolatePoints(state.points))
+        }
+
+        let camera = mapView.camera
+        let maxSegmentLength =
+            AdaptiveInterpolation.maxSegmentLengthMeters(
+                zoom: camera.zoom,
+                latitude: camera.target.latitude
+            )
+        let key =
+            AdaptiveInterpolation.cacheKey(
+                pointsHash: AdaptiveInterpolation.pointsHash(state.points),
+                maxSegmentLengthMeters: maxSegmentLength
+            )
+        if let cached = interpolationCache.get(key) {
+            return cached
+        }
+
+        let interpolated = createInterpolatePoints(state.points, maxSegmentLength: maxSegmentLength)
         // Google Maps iOS has practical limits on polygon point counts; fallback to raw points if too large.
         if interpolated.count > 10_000 {
-            return state.points
+            return rawPath(state.points)
         }
-        return interpolated
+
+        let path = rawPath(interpolated)
+        interpolationCache.put(key, path)
+        return path
     }
 }
