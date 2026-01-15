@@ -315,13 +315,13 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
-            guard let id = marker.userData as? String else { return false }
+            guard let id = marker.userData as? String else { return true }
             if let state = markerController?.getMarkerState(for: id) {
                 markerController?.dispatchClick(state: state)
             } else if let state = strategyMarkerController?.markerManager.getEntity(id)?.state {
                 strategyMarkerController?.dispatchClick(state)
             }
-            return false
+            return true
         }
 
         func mapView(_ mapView: GMSMapView, didBeginDragging marker: GMSMarker) {
