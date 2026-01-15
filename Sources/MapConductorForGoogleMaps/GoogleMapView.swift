@@ -66,6 +66,30 @@ public struct GoogleMapView: View {
     }
 }
 
+private final class GoogleMapWrapperView: UIView {
+    let mapView: GMSMapView
+    let overlayContainer: UIView
+
+    init(mapView: GMSMapView, overlayContainer: UIView) {
+        self.mapView = mapView
+        self.overlayContainer = overlayContainer
+        super.init(frame: .zero)
+
+        addSubview(mapView)
+        addSubview(overlayContainer)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        mapView.frame = bounds
+        overlayContainer.frame = bounds
+    }
+}
+
 private struct GoogleMapViewRepresentable: UIViewRepresentable {
     @ObservedObject var state: GoogleMapViewState
 
@@ -88,7 +112,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         )
     }
 
-    func makeUIView(context: Context) -> GMSMapView {
+    func makeUIView(context: Context) -> GoogleMapWrapperView {
         if let sdkInitialize = sdkInitialize {
             Coordinator.runOnce(sdkInitialize)
         }
@@ -97,7 +121,11 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         let mapView = GMSMapView(frame: .zero, camera: camera)
         mapView.mapType = state.mapDesignType.getValue()
         mapView.delegate = context.coordinator
-        context.coordinator.attachInfoBubbleContainer(to: mapView)
+
+        let wrapper = GoogleMapWrapperView(mapView: mapView, overlayContainer: context.coordinator.infoBubbleContainer)
+        wrapper.backgroundColor = .clear
+
+        context.coordinator.attachInfoBubbleContainer(to: wrapper)
         context.coordinator.mapView = mapView
         context.coordinator.bind(state: state, mapView: mapView)
         // Ensure overlay controllers subscribe immediately (before the first updateUIView),
@@ -105,19 +133,19 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         MCLog.map("GoogleMapView.makeUIView updateContent markers=\(content.markers.count) bubbles=\(content.infoBubbles.count)")
         context.coordinator.updateContent(content)
         context.coordinator.updateInfoBubbleLayouts()
-        return mapView
+        return wrapper
     }
 
-    func updateUIView(_ uiView: GMSMapView, context: Context) {
-        uiView.mapType = state.mapDesignType.getValue()
+    func updateUIView(_ uiView: GoogleMapWrapperView, context: Context) {
+        uiView.mapView.mapType = state.mapDesignType.getValue()
         MCLog.map("GoogleMapView.updateUIView updateContent markers=\(content.markers.count) bubbles=\(content.infoBubbles.count)")
         context.coordinator.updateContent(content)
         context.coordinator.updateInfoBubbleLayouts()
     }
 
-    static func dismantleUIView(_ uiView: GMSMapView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: GoogleMapWrapperView, coordinator: Coordinator) {
         coordinator.unbind()
-        uiView.delegate = nil
+        uiView.mapView.delegate = nil
     }
 
     private func makeCamera(from camera: MapCameraPosition) -> GMSCameraPosition {
@@ -154,7 +182,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private var strategyMarkerStatesById: [String: MarkerState] = [:]
 
         private var didCallMapLoaded = false
-        private let infoBubbleContainer = PassthroughContainerView()
+        fileprivate let infoBubbleContainer = PassthroughContainerView()
 
         init(
             state: GoogleMapViewState,
@@ -506,13 +534,13 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 }
         }
 
-        fileprivate func attachInfoBubbleContainer(to mapView: GMSMapView) {
-            guard infoBubbleContainer.superview !== mapView else { return }
+        fileprivate func attachInfoBubbleContainer(to hostView: UIView) {
+            guard infoBubbleContainer.superview !== hostView else { return }
             infoBubbleContainer.backgroundColor = .clear
             infoBubbleContainer.isUserInteractionEnabled = true  // Enable interaction for InfoBubble buttons
-            infoBubbleContainer.frame = mapView.bounds
+            infoBubbleContainer.frame = hostView.bounds
             infoBubbleContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            mapView.addSubview(infoBubbleContainer)
+            hostView.addSubview(infoBubbleContainer)
         }
 
         fileprivate func updateInfoBubbleLayouts() {
