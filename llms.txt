@@ -1,0 +1,33 @@
+# MapConductor Google Maps Module (ios-for-googlemaps)
+
+## Summary
+Provider-specific MapConductor implementation for Google Maps on iOS. This module connects MapConductorCore semantics to the Google Maps SDK and exposes the unified SwiftUI API for Google Maps.
+
+## Key Concepts
+- Provider-specific SwiftUI bindings for the unified API
+- Driver/controller layer translating MapConductorCore state to Google Maps SDK operations
+- Renderer implementations for markers, overlays, camera updates, and gestures
+
+## What This Module Does
+- Implements MapConductor unified API for Google Maps
+- Translates provider-agnostic models to Google Maps SDK behavior
+- Manages Google Maps–specific controllers and renderers
+
+## What This Module Does Not Do
+- Define provider-agnostic domain models (see `ios-sdk-core`)
+- Provide generic/shared SwiftUI APIs for all providers
+
+## Source Layout
+- `Sources/MapConductorForGoogleMaps/` Google Maps driver, controllers, and renderers
+- `Package.swift` Swift Package definition
+- `README.md` architecture and responsibilities
+
+## Build/Integration
+- Swift Package Manager module name: `MapConductorForGoogleMaps`
+- Depends on `MapConductorCore` and `GoogleMaps` (Google Maps SDK for iOS)
+- Minimum platform: iOS 16 (see `Package.swift`)
+
+## Notes for LLMs
+- Keep Google Maps–specific behavior isolated here; avoid leaking into core.
+- Use MapConductorCore types for shared semantics.
+- Follow existing controller/renderer patterns when adding features.
