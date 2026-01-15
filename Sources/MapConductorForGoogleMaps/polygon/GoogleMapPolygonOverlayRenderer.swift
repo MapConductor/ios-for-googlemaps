@@ -21,6 +21,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         polygon.strokeWidth = CGFloat(state.strokeWidth)
         polygon.fillColor = state.fillColor
         polygon.geodesic = state.geodesic
+        polygon.zIndex = Int32(truncatingIfNeeded: state.zIndex)
         polygon.map = mapView
         polygon.userData = state.id
         return polygon
@@ -50,6 +51,10 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
 
         if finger.fillColor != prevFinger.fillColor {
             polygon.fillColor = current.state.fillColor
+        }
+
+        if finger.zIndex != prevFinger.zIndex {
+            polygon.zIndex = Int32(truncatingIfNeeded: current.state.zIndex)
         }
 
         return polygon
