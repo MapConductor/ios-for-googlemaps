@@ -4,17 +4,6 @@ import MapConductorCore
 import SwiftUI
 import UIKit
 
-/// A container view that only intercepts touches on its subviews (InfoBubbles),
-/// allowing touches elsewhere to pass through to the map view below.
-private class PassthroughContainerView: UIView {
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hitView = super.hitTest(point, with: event)
-        // If the hit view is this container itself (not a subview), return nil
-        // to pass the touch through to the view below (the map).
-        return hitView == self ? nil : hitView
-    }
-}
-
 public struct GoogleMapView: View {
     @ObservedObject private var state: GoogleMapViewState
 
@@ -171,7 +160,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private var circleController: GoogleMapCircleController?
         private var polylineController: GoogleMapPolylineController?
         private var polygonController: GoogleMapPolygonController?
-        private var infoBubbleController: InfoBubbleController?
+        private var infoBubbleCoordinator: InfoBubbleOverlayCoordinator?
         private var strategyMarkerController: StrategyMarkerController<
             GMSMarker,
             AnyMarkerRenderingStrategy<GMSMarker>,
@@ -213,7 +202,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             state.setMapViewHolder(controller.holder)
 
             let markerController = GoogleMapMarkerController(mapView: mapView) { [weak self] id in
-                self?.infoBubbleController?.updateInfoBubblePosition(for: id)
+                self?.infoBubbleCoordinator?.updateInfoBubblePosition(for: id)
             }
             self.markerController = markerController
 
@@ -232,12 +221,21 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             let circleController = GoogleMapCircleController(mapView: mapView)
             self.circleController = circleController
 
-            let infoBubbleController = InfoBubbleController(
-                mapView: mapView,
+            self.infoBubbleCoordinator = InfoBubbleOverlayCoordinator(
                 container: infoBubbleContainer,
-                markerController: markerController
+                project: { [weak self] point in
+                    guard let mapView = self?.mapView else { return nil }
+                    let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                    return mapView.projection.point(for: coordinate)
+                },
+                resolveMarkerStateForIcon: { [weak markerController] id, bubbleMarker in
+                    markerController?.getMarkerState(for: id) ?? bubbleMarker
+                },
+                iconMetrics: { [weak markerController] markerState in
+                    let icon = markerController?.getIcon(for: markerState) ?? (markerState.icon ?? DefaultMarkerIcon()).toBitmapIcon()
+                    return MarkerIconMetrics(size: icon.size, anchor: icon.anchor, infoAnchor: icon.infoAnchor)
+                }
             )
-            self.infoBubbleController = infoBubbleController
         }
 
         func unbind() {
@@ -256,8 +254,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             polygonController = nil
             circleController?.unbind()
             circleController = nil
-            infoBubbleController?.unbind()
-            infoBubbleController = nil
+            infoBubbleCoordinator?.unbind()
+            infoBubbleCoordinator = nil
             strategyMarkerSubscriptions.values.forEach { $0.cancel() }
             strategyMarkerSubscriptions.removeAll()
             strategyMarkerStatesById.removeAll()
@@ -268,7 +266,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         }
 
         func updateContent(_ content: MapViewContent) {
-            infoBubbleController?.syncInfoBubbles(content.infoBubbles)
+            infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
             markerController?.syncMarkers(content.markers)
             updateStrategyRendering(content)
             groundImageController?.syncGroundImages(content.groundImages)
@@ -276,7 +274,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             circleController?.syncCircles(content.circles)
             polylineController?.syncPolylines(content.polylines)
             polygonController?.syncPolygons(content.polygons)
-            infoBubbleController?.updateAllLayouts()
+            infoBubbleCoordinator?.updateAllLayouts()
         }
 
         // MARK: - GMSMapViewDelegate
@@ -362,7 +360,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 longitude: marker.position.longitude,
                 altitude: 0
             )
-            infoBubbleController?.updateInfoBubblePosition(for: id)
+            infoBubbleCoordinator?.updateInfoBubblePosition(for: id)
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDragStart(state: state)
             } else {
@@ -380,7 +378,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 longitude: marker.position.longitude,
                 altitude: 0
             )
-            infoBubbleController?.updateInfoBubblePosition(for: id)
+            infoBubbleCoordinator?.updateInfoBubblePosition(for: id)
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDrag(state: state)
             } else {
@@ -398,7 +396,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 longitude: marker.position.longitude,
                 altitude: 0
             )
-            infoBubbleController?.updateInfoBubblePosition(for: id)
+            infoBubbleCoordinator?.updateInfoBubblePosition(for: id)
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDragEnd(state: state)
             } else {
@@ -544,7 +542,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         }
 
         fileprivate func updateInfoBubbleLayouts() {
-            infoBubbleController?.updateAllLayouts()
+            infoBubbleCoordinator?.updateAllLayouts()
         }
     }
 }
