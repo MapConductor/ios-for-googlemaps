@@ -22,6 +22,13 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         polygon.fillColor = state.fillColor
         polygon.geodesic = state.geodesic
         polygon.zIndex = Int32(truncatingIfNeeded: state.zIndex)
+        polygon.holes = state.holes.map { holePoints in
+            let holePath = GMSMutablePath()
+            for point in holePoints {
+                holePath.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+            }
+            return holePath
+        }
         polygon.map = mapView
         polygon.userData = state.id
         return polygon
@@ -35,10 +42,17 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         let finger = current.fingerPrint
         let prevFinger = prev.fingerPrint
 
-        if finger.points != prevFinger.points || finger.geodesic != prevFinger.geodesic {
+        if finger.points != prevFinger.points || finger.geodesic != prevFinger.geodesic || finger.holes != prevFinger.holes {
             guard let mapView else { return polygon }
             polygon.path = resolvedPath(for: current.state, mapView: mapView)
             polygon.geodesic = current.state.geodesic
+            polygon.holes = current.state.holes.map { holePoints in
+                let holePath = GMSMutablePath()
+                for point in holePoints {
+                    holePath.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+                }
+                return holePath
+            }
         }
 
         if finger.strokeWidth != prevFinger.strokeWidth {
