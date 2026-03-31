@@ -61,6 +61,8 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
                 MCLog.marker("GoogleMapMarkerController.syncMarkers -> add()")
                 await self.add(data: markers.map { $0.state })
             }
+        } else {
+            refreshTileLayerIfNeeded()
         }
 
         for marker in markers {
@@ -103,6 +105,7 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
     private var tileRouteId: String?
     private var tiledMarkerIds: Set<String> = []
     private var tileTileLayer: GMSURLTileLayer?
+    private var lastServerBaseUrl: String = ""
     private let defaultMarkerIconForTiling: BitmapIcon = DefaultMarkerIcon().toBitmapIcon()
 
     private static var retinaAwareTileSize: Int {
@@ -189,6 +192,14 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
         }
     }
 
+    private func refreshTileLayerIfNeeded() {
+        guard !tiledMarkerIds.isEmpty else { return }
+        let server = TileServerRegistry.get()
+        guard server.baseUrl != lastServerBaseUrl else { return }
+        MCLog.marker("GoogleMapMarkerController.refreshTileLayerIfNeeded serverRestarted oldUrl=\(lastServerBaseUrl) newUrl=\(server.baseUrl)")
+        updateTileLayer(hasTiledMarkers: true)
+    }
+
     private func updateTileLayer(hasTiledMarkers: Bool) {
         MCLog.marker("GoogleMapMarkerController.updateTileLayer hasTiledMarkers=\(hasTiledMarkers) mapView=\(mapView != nil) routeId=\(tileRouteId ?? "nil")")
         tileTileLayer?.map = nil
@@ -197,6 +208,7 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
         guard hasTiledMarkers, let mapView, let routeId = tileRouteId, let tileRenderer else { return }
 
         let server = TileServerRegistry.get()
+        lastServerBaseUrl = server.baseUrl
         let urlTemplate = server.urlTemplate(routeId: routeId, tileSize: tileRenderer.tileSize)
         MCLog.marker("GoogleMapMarkerController.updateTileLayer addLayer urlTemplate=\(urlTemplate) tileSize=\(tileRenderer.tileSize)")
 
