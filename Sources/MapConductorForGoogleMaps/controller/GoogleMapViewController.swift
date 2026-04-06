@@ -59,8 +59,6 @@ final class GoogleMapViewController: MapViewControllerProtocol {
         CATransaction.commit()
     }
 
-    func registerOverlayController(controller: any OverlayControllerProtocol) {}
-
     func notifyCameraMoveStart(_ cameraPosition: MapCameraPosition) {
         cameraMoveStartListener?(cameraPosition)
     }
