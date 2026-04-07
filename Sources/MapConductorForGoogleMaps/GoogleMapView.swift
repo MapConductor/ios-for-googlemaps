@@ -266,6 +266,9 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         }
 
         func updateContent(_ content: MapViewContent) {
+            if let mapView {
+                polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
+            }
             infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
             markerController?.tilingOptions = content.markerTilingOptions
             markerController?.syncMarkers(content.markers)
@@ -281,6 +284,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         // MARK: - GMSMapViewDelegate
 
         func mapView(_ mapView: GMSMapView, didTapAt coordinate: CLLocationCoordinate2D) {
+            polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
             // Tile-rendered markers have no native tap event; hit-test them by screen proximity.
             let screenPoint = mapView.projection.point(for: coordinate)
             if markerController?.handleTiledMarkerTap(at: screenPoint) == true {

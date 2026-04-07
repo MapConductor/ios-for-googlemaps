@@ -23,11 +23,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         polygon.geodesic = state.geodesic
         polygon.zIndex = Int32(truncatingIfNeeded: state.zIndex)
         polygon.holes = state.holes.map { holePoints in
-            let holePath = GMSMutablePath()
-            for point in holePoints {
-                holePath.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
-            }
-            return holePath
+            resolvedHolePath(for: holePoints)
         }
         polygon.map = mapView
         polygon.userData = state.id
@@ -47,11 +43,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
             polygon.path = resolvedPath(for: current.state, mapView: mapView)
             polygon.geodesic = current.state.geodesic
             polygon.holes = current.state.holes.map { holePoints in
-                let holePath = GMSMutablePath()
-                for point in holePoints {
-                    holePath.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
-                }
-                return holePath
+                resolvedHolePath(for: holePoints)
             }
         }
 
@@ -81,39 +73,32 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
     private func resolvedPath(for state: PolygonState, mapView: GMSMapView) -> GMSPath {
         func rawPath(_ points: [GeoPointProtocol]) -> GMSPath {
             let path = GMSMutablePath()
-            for point in points {
+            for point in closedNormalizedRing(points) {
                 path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
             }
             return path
         }
+        // Let Google Maps render polygon edges from the original ring.
+        // Extra interpolation can distort complex outlines and produce broken strokes.
+        _ = mapView
+        _ = interpolationCache
+        return rawPath(state.points)
+    }
 
-        if !state.geodesic {
-            return rawPath(createLinearInterpolatePoints(state.points))
+    private func resolvedHolePath(for points: [GeoPointProtocol]) -> GMSPath {
+        let path = GMSMutablePath()
+        for point in closedNormalizedRing(points) {
+            path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
         }
-
-        let camera = mapView.camera
-        let maxSegmentLength =
-            AdaptiveInterpolation.maxSegmentLengthMeters(
-                zoom: camera.zoom,
-                latitude: camera.target.latitude
-            )
-        let key =
-            AdaptiveInterpolation.cacheKey(
-                pointsHash: AdaptiveInterpolation.pointsHash(state.points),
-                maxSegmentLengthMeters: maxSegmentLength
-            )
-        if let cached = interpolationCache.get(key) {
-            return cached
-        }
-
-        let interpolated = createInterpolatePoints(state.points, maxSegmentLength: maxSegmentLength)
-        // Google Maps iOS has practical limits on polygon point counts; fallback to raw points if too large.
-        if interpolated.count > 10_000 {
-            return rawPath(state.points)
-        }
-
-        let path = rawPath(interpolated)
-        interpolationCache.put(key, path)
         return path
+    }
+
+    private func closedNormalizedRing(_ points: [GeoPointProtocol]) -> [GeoPointProtocol] {
+        var ring = points.map { $0.normalize() }
+        if let first = ring.first, let last = ring.last,
+           !(GeoPoint.from(position: first) == GeoPoint.from(position: last)) {
+            ring.append(first)
+        }
+        return ring
     }
 }
