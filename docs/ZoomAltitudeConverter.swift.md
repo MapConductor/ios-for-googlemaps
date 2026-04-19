@@ -3,12 +3,6 @@
 Converts between Google Maps zoom levels and the altitude-based camera model used internally by
 the SDK. Implements `ZoomAltitudeConverterProtocol`.
 
-The conversion uses the formula:
-- `altitude = (zoom0Altitude × cos(latitude)) / 2^zoom × cos(tilt)`
-
-This matches the historical behavior of Google Maps where altitude approximates the camera
-distance from the Earth's surface.
-
 ## Signature
 
 ```swift
