@@ -1,121 +1,221 @@
-# MapConductor Google Maps Module
+# Google Maps SDK for MapConductor iOS
 
-MapConductor Google Maps Module provides the Google Maps–specific
-implementation of the MapConductor unified API for iOS.
+## Description
 
-This module contains both the SwiftUI-based unified API bindings and
-the driver logic required to translate provider-agnostic map semantics
-into concrete behavior using the Google Maps SDK for iOS.
+MapConductor provides a unified API for iOS SwiftUI.
+You can use Google Maps view with SwiftUI, but you can also switch to other Maps SDKs (such as MapLibre, MapKit, and so on), anytime.
+Even using the wrapper API, you can still access the native Google Maps view if you want.
 
----
+## Setup
 
-## Overview
+https://docs-ios.mapconductor.com/setup/google-maps/
 
-The Google Maps module is responsible for connecting the MapConductor
-conceptual API to the Google Maps SDK.
+## Usage
 
-While the unified API of MapConductor is conceptually shared across all
-map providers, its SwiftUI bindings and runtime behavior must be
-implemented in a provider-specific manner to account for differences in
-rendering, lifecycle management, and interaction models.
+```swift
+import SwiftUI
+import MapConductorCore
+import MapConductorForGoogleMaps
 
-This module fulfills that role for Google Maps.
+struct MapView: View {
+    @StateObject private var mapViewState = GoogleMapViewState(
+        cameraPosition: MapCameraPosition(
+            position: GeoPoint(latitude: 35.6762, longitude: 139.6503),
+            zoom: 2
+        )
+    )
+    @State private var selectedMarker: MarkerState? = nil
 
-## Role in the architecture
+    let center = GeoPoint(latitude: 35.6762, longitude: 139.6503)
 
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Marker(
+                position: center,
+                icon: DefaultMarkerIcon(label: "Tokyo"),
+                onClick: { state in selectedMarker = state }
+            )
+            if let selected = selectedMarker {
+                InfoBubble(marker: selected) {
+                    Text("Hello, world!")
+                }
+            }
+        }
+    }
+}
 ```
-┌────────────────────────────────────────────┐
-│ Application / App Logic                    │
-├────────────────────────────────────────────┤
-│ MapConductor Unified API (SwiftUI)         │
-│  (provider-specific implementation)        │
-│  - Unified API (SwiftUI bindings)          │
-│  - Internal controllers                    │
-├────────────────────────────────────────────┤
-│ MapConductor iOS Core                      │
-│  - Domain models                           │
-│  - State & behavior                        │
-│  - Provider-agnostic logic                 │
-├────────────────────────────────────────────┤
-│ Google Maps Module                         │
-│  - Google Maps Driver                      │
-│  - Internal renderers                      │
-├────────────────────────────────────────────┤
-│ Google Maps SDK for iOS                    │
-└────────────────────────────────────────────┘
+
+![](docs/images/basic-setup-googlemaps.png)
+
+
+## Components
+
+### GoogleMapView [[docs]](https://docs-ios.mapconductor.com/components/mapviewcomponent/)
+
+```swift
+struct MapExample: View {
+    @StateObject private var mapViewState = GoogleMapViewState(
+        cameraPosition: MapCameraPosition(
+            position: GeoPoint(latitude: 37.422198, longitude: -122.085377),
+            zoom: 17,
+            tilt: 60,
+            bearing: 30
+        )
+    )
+
+    var body: some View {
+        GoogleMapView(state: mapViewState)
+    }
+}
 ```
+![](docs/images/mapview.png)
 
-In this architecture:
+------------------------------------------------------------------------
 
-- The **unified API** defines what a map operation means
+### Marker [[docs]](https://docs-ios.mapconductor.com/components/marker/)
 
-- The [core module](https://github.com/MapConductor/ios-sdk-core/tree/main) defines provider-agnostic semantics and state
+```swift
+struct MarkerExample: View {
+    @State private var markerState = MarkerState(
+        position: GeoPoint(latitude: 35.6762, longitude: 139.6503),
+        icon: DefaultMarkerIcon(label: "Tokyo"),
+        onClick: { state in state.animate(.bounce) }
+    )
 
-- This **Google Maps** module defines how those semantics are realized using the Google Maps SDK
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Marker(state: markerState)
+        }
+    }
+}
+```
+![](docs/images/marker.png)
 
-## What this module does
+------------------------------------------------------------------------
 
-This module is responsible for:
+### InfoBubble [[docs]](https://docs-ios.mapconductor.com/components/infobubble/)
 
-- Providing the Google Maps–specific implementation of the MapConductor unified API (SwiftUI)
+```swift
+struct InfoBubbleExample: View {
+    @State private var selectedMarker: MarkerState? = nil
+    @State private var markerState = MarkerState(
+        position: GeoPoint(latitude: 35.6762, longitude: 139.6503),
+        onClick: { [self] state in selectedMarker = state }
+    )
 
-- Translating provider-agnostic domain models and state into Google Maps SDK operations
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Marker(state: markerState)
+            if let selected = selectedMarker {
+                InfoBubble(marker: selected) {
+                    Text("Hello, world!")
+                }
+            }
+        }
+    }
+}
+```
+![](docs/images/infobubble.png)
 
-- Managing provider-specific controllers for camera, overlays, gestures, and interactions
+------------------------------------------------------------------------
 
-- Implementing Google Maps–specific rendering logic and workarounds where required
+### Circle [[docs]](https://docs-ios.mapconductor.com/components/circle/)
 
-In short, this module answers the question:
+```swift
+struct CircleExample: View {
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Circle(
+                center: GeoPoint(latitude: 35.6762, longitude: 139.6503),
+                radiusMeters: 50,
+                fillColor: UIColor.blue.withAlphaComponent(0.5),
+                onClick: { state in
+                    state.fillColor = UIColor.red.withAlphaComponent(0.5)
+                }
+            )
+        }
+    }
+}
+```
+![](docs/images/circle.png)
 
-> “How should this unified map operation behave on Google Maps?”
+------------------------------------------------------------------------
 
-## What this module does NOT do
+### Polyline [[docs]](https://docs-ios.mapconductor.com/components/polyline/)
 
-Internally, this module typically consists of:
+```swift
+struct PolylineExample: View {
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Polyline(
+                points: airports,
+                strokeColor: UIColor.blue.withAlphaComponent(0.5),
+                geodesic: true
+            )
+        }
+    }
+}
+```
+![](docs/images/polyline.png)
 
-- **SwiftUI unified API bindings**
-  Provider-specific implementations of the unified API surface
+------------------------------------------------------------------------
 
-- **Controllers**
-  Components that manage state synchronization and event handling between SwiftUI, the core module, and the Google Maps SDK
+### Polygon [[docs]](https://docs-ios.mapconductor.com/components/polygon/)
 
-- **Renderers**
-  Low-level components that create and update Google Maps SDK objects such as markers, overlays, and camera updates
+```swift
+struct PolygonExample: View {
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Polygon(
+                points: goryokaku,
+                strokeColor: UIColor.red.withAlphaComponent(0.5),
+                fillColor: UIColor.red.withAlphaComponent(0.7)
+            )
+        }
+    }
+}
+```
+![](docs/images/polygon.png)
 
-These components are considered implementation details and are not part of the public API.
+------------------------------------------------------------------------
 
-## Design philosophy
+### Polygon Hole
 
-This module follows these design principles:
+```swift
+struct PolygonHoleExample: View {
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            Polygon(
+                points: outerPoints,
+                holes: [innerPoints1, innerPoints2],
+                fillColor: UIColor(red: 0.47, green: 0.47, blue: 0.50, alpha: 0.8),
+                strokeColor: UIColor.red,
+                strokeWidth: 2
+            )
+        }
+    }
+}
+```
+![](docs/images/polygon-hole.png)
 
-- **Conceptually unified, operationally specialized**
-  The meaning of map operations is shared across providers, while implementation details remain provider-specific.
+------------------------------------------------------------------------
 
-- **Isolation of provider-specific behavior**
-  Google Maps quirks and limitations should not leak into the core module or unified API definitions.
+### GroundImage [[docs]](https://docs-ios.mapconductor.com/components/groundimage/)
 
-- **No lowest common denominator APIs**
-  Differences in provider capabilities are handled through adaptation, not by reducing the expressive power of the unified API.
-  
-## Who should use or modify this module
-
-This module is primarily intended for:
-
-- Contributors implementing or maintaining Google Maps support
-
-- Developers debugging provider-specific map behavior
-
-- Contributors extending MapConductor with new Google Maps features
-
-If you are using MapConductor via the unified API in an application,
-you typically do not need to interact with this module directly.
-
-## Relationship to other modules
-
-- **MapConductor iOS Core**
-  https://github.com/MapConductor/ios-sdk-core/tree/main
-  Defines provider-agnostic domain models, state, and semantics
-
-- **Other provider modules**
-  (e.g. MapKit, MapLibre) implement the same semantic contract for different map SDKs
-
+```swift
+struct GroundImageExample: View {
+    var body: some View {
+        GoogleMapView(state: mapViewState) {
+            GroundImage(
+                bounds: GeoRectBounds(
+                    southWest: GeoPoint.fromLatLong(...),
+                    northEast: GeoPoint.fromLatLong(...)
+                ),
+                image: uiImage,
+                opacity: 0.5
+            )
+        }
+    }
+}
+```
+![](docs/images/groundimage.png)
