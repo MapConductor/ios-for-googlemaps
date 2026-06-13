@@ -9,6 +9,7 @@ public struct GoogleMapView: View {
 
     private let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
     private let onMapClick: OnMapEventHandler?
+    private let onMapLongClick: OnMapEventHandler?
     private let onCameraMoveStart: OnCameraMoveHandler?
     private let onCameraMove: OnCameraMoveHandler?
     private let onCameraMoveEnd: OnCameraMoveHandler?
@@ -19,6 +20,7 @@ public struct GoogleMapView: View {
         state: GoogleMapViewState,
         onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>? = nil,
         onMapClick: OnMapEventHandler? = nil,
+        onMapLongClick: OnMapEventHandler? = nil,
         onCameraMoveStart: OnCameraMoveHandler? = nil,
         onCameraMove: OnCameraMoveHandler? = nil,
         onCameraMoveEnd: OnCameraMoveHandler? = nil,
@@ -28,6 +30,7 @@ public struct GoogleMapView: View {
         self.state = state
         self.onMapLoaded = onMapLoaded
         self.onMapClick = onMapClick
+        self.onMapLongClick = onMapLongClick
         self.onCameraMoveStart = onCameraMoveStart
         self.onCameraMove = onCameraMove
         self.onCameraMoveEnd = onCameraMoveEnd
@@ -42,6 +45,7 @@ public struct GoogleMapView: View {
                 state: state,
                 onMapLoaded: onMapLoaded,
                 onMapClick: onMapClick,
+                onMapLongClick: onMapLongClick,
                 onCameraMoveStart: onCameraMoveStart,
                 onCameraMove: onCameraMove,
                 onCameraMoveEnd: onCameraMoveEnd,
@@ -84,6 +88,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
     let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
     let onMapClick: OnMapEventHandler?
+    let onMapLongClick: OnMapEventHandler?
     let onCameraMoveStart: OnCameraMoveHandler?
     let onCameraMove: OnCameraMoveHandler?
     let onCameraMoveEnd: OnCameraMoveHandler?
@@ -95,6 +100,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             state: state,
             onMapLoaded: onMapLoaded,
             onMapClick: onMapClick,
+            onMapLongClick: onMapLongClick,
             onCameraMoveStart: onCameraMoveStart,
             onCameraMove: onCameraMove,
             onCameraMoveEnd: onCameraMoveEnd
@@ -148,6 +154,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private let state: GoogleMapViewState
         private let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
         private let onMapClick: OnMapEventHandler?
+        private let onMapLongClick: OnMapEventHandler?
         private let onCameraMoveStart: OnCameraMoveHandler?
         private let onCameraMove: OnCameraMoveHandler?
         private let onCameraMoveEnd: OnCameraMoveHandler?
@@ -177,6 +184,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             state: GoogleMapViewState,
             onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?,
             onMapClick: OnMapEventHandler?,
+            onMapLongClick: OnMapEventHandler?,
             onCameraMoveStart: OnCameraMoveHandler?,
             onCameraMove: OnCameraMoveHandler?,
             onCameraMoveEnd: OnCameraMoveHandler?
@@ -184,6 +192,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             self.state = state
             self.onMapLoaded = onMapLoaded
             self.onMapClick = onMapClick
+            self.onMapLongClick = onMapLongClick
             self.onCameraMoveStart = onCameraMoveStart
             self.onCameraMove = onCameraMove
             self.onCameraMoveEnd = onCameraMoveEnd
@@ -305,6 +314,12 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             let point = GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0)
             controller?.notifyMapClick(point)
             onMapClick?(point)
+        }
+
+        func mapView(_ mapView: GMSMapView, didLongPressAt coordinate: CLLocationCoordinate2D) {
+            let point = GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0)
+            controller?.notifyMapLongClick(point)
+            onMapLongClick?(point)
         }
 
         func mapView(_ mapView: GMSMapView, willMove gesture: Bool) {

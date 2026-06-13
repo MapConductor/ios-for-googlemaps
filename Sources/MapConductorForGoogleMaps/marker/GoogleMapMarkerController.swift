@@ -22,7 +22,6 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
     }
 
     func syncMarkers(_ markers: [Marker]) {
-        MCLog.marker("GoogleMapMarkerController.syncMarkers count=\(markers.count)")
         let newIds = Set(markers.map { $0.id })
         let oldIds = Set(markerStatesById.keys)
 

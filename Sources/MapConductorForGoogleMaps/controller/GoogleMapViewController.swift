@@ -74,4 +74,8 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     func notifyMapClick(_ point: GeoPoint) {
         mapClickListener?(point)
     }
+
+    func notifyMapLongClick(_ point: GeoPoint) {
+        mapLongClickListener?(point)
+    }
 }
