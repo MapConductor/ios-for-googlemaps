@@ -21,6 +21,7 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
         polyline.strokeWidth = CGFloat(state.strokeWidth)
         polyline.geodesic = state.geodesic
         polyline.isTappable = false
+        polyline.zIndex = Int32(state.zIndex)
         polyline.map = mapView
         polyline.userData = state.id
         return polyline
@@ -46,6 +47,10 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
 
         if finger.strokeColor != prevFinger.strokeColor {
             polyline.strokeColor = current.state.strokeColor
+        }
+
+        if finger.zIndex != prevFinger.zIndex {
+            polyline.zIndex = Int32(current.state.zIndex)
         }
 
         return polyline

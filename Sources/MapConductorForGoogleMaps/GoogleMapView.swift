@@ -361,6 +361,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
             if !didCallMapLoaded {
                 didCallMapLoaded = true
+                controller?.notifyMapInitialized()
                 onMapLoaded?(state)
             }
         }

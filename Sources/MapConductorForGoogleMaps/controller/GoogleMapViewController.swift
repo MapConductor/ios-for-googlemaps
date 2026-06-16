@@ -13,6 +13,7 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     private var cameraMoveEndListener: OnCameraMoveHandler?
     private var mapClickListener: OnMapEventHandler?
     private var mapLongClickListener: OnMapEventHandler?
+    private var mapInitializedListener: OnMapInitializedHandler?
 
     init(mapView: GMSMapView) {
         self.mapView = mapView
@@ -41,6 +42,10 @@ final class GoogleMapViewController: MapViewControllerProtocol {
 
     func setMapLongClickListener(listener: OnMapEventHandler?) {
         mapLongClickListener = listener
+    }
+
+    func setMapInitializedListener(listener: OnMapInitializedHandler?) {
+        mapInitializedListener = listener
     }
 
     func moveCamera(position: MapCameraPosition) {
@@ -77,5 +82,9 @@ final class GoogleMapViewController: MapViewControllerProtocol {
 
     func notifyMapLongClick(_ point: GeoPoint) {
         mapLongClickListener?(point)
+    }
+
+    func notifyMapInitialized() {
+        mapInitializedListener?(.MapCreated)
     }
 }
