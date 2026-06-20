@@ -52,7 +52,7 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         if !data.isEmpty { MCLog.marker("GoogleMapMarkerRenderer.onChange count=\(data.count)") }
         let now = CACurrentMediaTime()
         if now - lastChangeBatchTime < Self.minAnimationUpdateInterval {
-            pendingChangeParams = data
+            mergePendingChanges(data)
             schedulePendingChanges(after: Self.minAnimationUpdateInterval - (now - lastChangeBatchTime))
             return data.map { $0.prev.marker }
         }
@@ -283,6 +283,20 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
             guard let marker = params.prev.marker else { return nil }
             apply(state: params.current.state, bitmapIcon: params.bitmapIcon, to: marker)
             return marker
+        }
+    }
+
+    private func mergePendingChanges(_ data: [MarkerOverlayChangeParams<GMSMarker>]) {
+        // Multiple markers can each request a change within the same throttle window
+        // (e.g. several markers moving on one camera update). Merge by marker id instead
+        // of overwriting the whole batch, otherwise only the last-processed marker's
+        // change would survive and the others would appear "stuck".
+        for params in data {
+            if let index = pendingChangeParams.firstIndex(where: { $0.current.state.id == params.current.state.id }) {
+                pendingChangeParams[index] = params
+            } else {
+                pendingChangeParams.append(params)
+            }
         }
     }
 

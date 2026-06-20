@@ -7,3 +7,4 @@ Secrets.*
 !.gitkeep
 Package.resolved
 Packages/
+.build
