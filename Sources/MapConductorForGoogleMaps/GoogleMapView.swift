@@ -170,14 +170,12 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private var polylineController: GoogleMapPolylineController?
         private var polygonController: GoogleMapPolygonController?
         private var infoBubbleCoordinator: InfoBubbleOverlayCoordinator?
-        private var strategyMarkerController: StrategyMarkerController<
-            GMSMarker,
-            AnyMarkerRenderingStrategy<GMSMarker>,
-            GoogleMapMarkerRenderer
-        >?
-        private var strategyMarkerRenderer: GoogleMapMarkerRenderer?
-        private var strategyMarkerSubscriptions: [String: AnyCancellable] = [:]
-        private var strategyMarkerStatesById: [String: MarkerState] = [:]
+        private lazy var strategyManager = StrategyMarkerManager<GMSMarker, GoogleMapMarkerRenderer>(
+            makeRenderer: { [weak self] strategy in
+                guard let mapView = self?.mapView else { fatalError("mapView unavailable") }
+                return GoogleMapMarkerRenderer(mapView: mapView, markerManager: strategy.markerManager)
+            }
+        )
 
         private var didCallMapLoaded = false
         fileprivate let infoBubbleContainer = PassthroughContainerView()
@@ -267,13 +265,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             circleController = nil
             infoBubbleCoordinator?.unbind()
             infoBubbleCoordinator = nil
-            strategyMarkerSubscriptions.values.forEach { $0.cancel() }
-            strategyMarkerSubscriptions.removeAll()
-            strategyMarkerStatesById.removeAll()
-            strategyMarkerRenderer?.unbind()
-            strategyMarkerRenderer = nil
-            strategyMarkerController?.destroy()
-            strategyMarkerController = nil
+            strategyManager.clear()
         }
 
         func updateContent(_ content: MapViewContent) {
@@ -283,7 +275,9 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
             markerController?.tilingOptions = content.markerTilingOptions
             markerController?.syncMarkers(content.markers)
-            updateStrategyRendering(content)
+            if let mapView {
+                strategyManager.update(content: content, initialCamera: currentCameraPosition(from: mapView))
+            }
             groundImageController?.syncGroundImages(content.groundImages)
             rasterController?.syncRasterLayers(content.rasterLayers)
             circleController?.syncCircles(content.circles)
@@ -331,7 +325,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             Task { [weak self] in
                 await self?.rasterController?.onCameraChanged(mapCameraPosition: camera)
                 await self?.polylineController?.onCameraChanged(mapCameraPosition: camera)
-                await self?.strategyMarkerController?.onCameraChanged(mapCameraPosition: camera)
+                await self?.strategyManager.onCameraChanged(camera)
             }
             updateInfoBubbleLayouts()
         }
@@ -344,7 +338,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             Task { [weak self] in
                 await self?.rasterController?.onCameraChanged(mapCameraPosition: camera)
                 await self?.polylineController?.onCameraChanged(mapCameraPosition: camera)
-                await self?.strategyMarkerController?.onCameraChanged(mapCameraPosition: camera)
+                await self?.strategyManager.onCameraChanged(camera)
             }
             updateInfoBubbleLayouts()
         }
@@ -357,7 +351,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             Task { [weak self] in
                 await self?.rasterController?.onCameraChanged(mapCameraPosition: camera)
                 await self?.polylineController?.onCameraChanged(mapCameraPosition: camera)
-                await self?.strategyMarkerController?.onCameraChanged(mapCameraPosition: camera)
+                await self?.strategyManager.onCameraChanged(camera)
             }
             updateInfoBubbleLayouts()
 
@@ -372,8 +366,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             guard let id = marker.userData as? String else { return true }
             if let state = markerController?.getMarkerState(for: id) {
                 markerController?.dispatchClick(state: state)
-            } else if let state = strategyMarkerController?.markerManager.getEntity(id)?.state {
-                strategyMarkerController?.dispatchClick(state)
+            } else if let state = strategyManager.controller?.markerManager.getEntity(id)?.state {
+                strategyManager.controller?.dispatchClick(state)
             }
             return true
         }
@@ -381,7 +375,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         func mapView(_ mapView: GMSMapView, didBeginDragging marker: GMSMarker) {
             guard let id = marker.userData as? String else { return }
             let state = markerController?.getMarkerState(for: id) ??
-                strategyMarkerController?.markerManager.getEntity(id)?.state
+                strategyManager.controller?.markerManager.getEntity(id)?.state
             guard let state else { return }
             state.position = GeoPoint(
                 latitude: marker.position.latitude,
@@ -392,14 +386,14 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDragStart(state: state)
             } else {
-                strategyMarkerController?.dispatchDragStart(state)
+                strategyManager.controller?.dispatchDragStart(state)
             }
         }
 
         func mapView(_ mapView: GMSMapView, didDrag marker: GMSMarker) {
             guard let id = marker.userData as? String else { return }
             let state = markerController?.getMarkerState(for: id) ??
-                strategyMarkerController?.markerManager.getEntity(id)?.state
+                strategyManager.controller?.markerManager.getEntity(id)?.state
             guard let state else { return }
             state.position = GeoPoint(
                 latitude: marker.position.latitude,
@@ -410,14 +404,14 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDrag(state: state)
             } else {
-                strategyMarkerController?.dispatchDrag(state)
+                strategyManager.controller?.dispatchDrag(state)
             }
         }
 
         func mapView(_ mapView: GMSMapView, didEndDragging marker: GMSMarker) {
             guard let id = marker.userData as? String else { return }
             let state = markerController?.getMarkerState(for: id) ??
-                strategyMarkerController?.markerManager.getEntity(id)?.state
+                strategyManager.controller?.markerManager.getEntity(id)?.state
             guard let state else { return }
             state.position = GeoPoint(
                 latitude: marker.position.latitude,
@@ -428,7 +422,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             if markerController?.getMarkerState(for: id) != nil {
                 markerController?.dispatchDragEnd(state: state)
             } else {
-                strategyMarkerController?.dispatchDragEnd(state)
+                strategyManager.controller?.dispatchDragEnd(state)
             }
         }
 
@@ -477,87 +471,6 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 )
             )
             return camera.toMapCameraPosition(visibleRegion: visibleRegion)
-        }
-
-        private func updateStrategyRendering(_ content: MapViewContent) {
-            guard let mapView else { return }
-            if let strategy = content.markerRenderingStrategy as? AnyMarkerRenderingStrategy<GMSMarker> {
-                if strategyMarkerController == nil ||
-                    strategyMarkerController?.markerManager !== strategy.markerManager {
-                    strategyMarkerRenderer?.unbind()
-                    let renderer = GoogleMapMarkerRenderer(
-                        mapView: mapView,
-                        markerManager: strategy.markerManager
-                    )
-                    strategyMarkerRenderer = renderer
-                    strategyMarkerController = StrategyMarkerController(strategy: strategy, renderer: renderer)
-                    Task { [weak self] in
-                        guard let self else { return }
-                        await self.strategyMarkerController?.onCameraChanged(
-                            mapCameraPosition: self.currentCameraPosition(from: mapView)
-                        )
-                    }
-                }
-                syncStrategyMarkers(content.markerRenderingMarkers)
-            } else {
-                strategyMarkerSubscriptions.values.forEach { $0.cancel() }
-                strategyMarkerSubscriptions.removeAll()
-                strategyMarkerStatesById.removeAll()
-                strategyMarkerRenderer?.unbind()
-                strategyMarkerRenderer = nil
-                strategyMarkerController?.destroy()
-                strategyMarkerController = nil
-            }
-        }
-
-        private func syncStrategyMarkers(_ markers: [MarkerState]) {
-            guard let controller = strategyMarkerController else { return }
-            let newIds = Set(markers.map { $0.id })
-            let oldIds = Set(strategyMarkerStatesById.keys)
-            var shouldSyncList = newIds != oldIds
-
-            var newStatesById: [String: MarkerState] = [:]
-            for state in markers {
-                if let existing = strategyMarkerStatesById[state.id], existing !== state {
-                    strategyMarkerSubscriptions[state.id]?.cancel()
-                    strategyMarkerSubscriptions.removeValue(forKey: state.id)
-                    shouldSyncList = true
-                }
-                newStatesById[state.id] = state
-            }
-            strategyMarkerStatesById = newStatesById
-
-            let removedIds = oldIds.subtracting(newIds)
-            for id in removedIds {
-                strategyMarkerSubscriptions[id]?.cancel()
-                strategyMarkerSubscriptions.removeValue(forKey: id)
-            }
-
-            if shouldSyncList {
-                Task { [weak self] in
-                    guard let self else { return }
-                    await controller.add(data: markers)
-                }
-            }
-
-            for state in markers {
-                subscribeToStrategyMarker(state)
-            }
-        }
-
-        private func subscribeToStrategyMarker(_ state: MarkerState) {
-            guard strategyMarkerSubscriptions[state.id] == nil else { return }
-            strategyMarkerSubscriptions[state.id] = state.asFlow()
-                .dropFirst() // Skip initial value to avoid triggering update on subscription
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    guard let self,
-                          self.strategyMarkerStatesById[state.id] != nil else { return }
-                    Task { [weak self] in
-                        guard let self else { return }
-                        await self.strategyMarkerController?.update(state: state)
-                    }
-                }
         }
 
         fileprivate func attachInfoBubbleContainer(to hostView: UIView) {
