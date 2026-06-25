@@ -115,6 +115,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         let camera = makeCamera(from: state.cameraPosition)
         let mapView = GMSMapView(frame: .zero, camera: camera)
         mapView.mapType = state.mapDesignType.getValue()
+        mapView.settings.scrollGestures = state.uiSettings.scrollGesture
         mapView.delegate = context.coordinator
 
         let wrapper = GoogleMapWrapperView(mapView: mapView, overlayContainer: context.coordinator.infoBubbleContainer)
@@ -133,6 +134,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: GoogleMapWrapperView, context: Context) {
         uiView.mapView.mapType = state.mapDesignType.getValue()
+        uiView.mapView.settings.scrollGestures = state.uiSettings.scrollGesture
         MCLog.map("GoogleMapView.updateUIView updateContent markers=\(content.markers.count) bubbles=\(content.infoBubbles.count)")
         context.coordinator.updateContent(content)
         context.coordinator.updateInfoBubbleLayouts()

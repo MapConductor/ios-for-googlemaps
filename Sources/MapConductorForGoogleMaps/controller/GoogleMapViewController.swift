@@ -64,6 +64,18 @@ final class GoogleMapViewController: MapViewControllerProtocol {
         CATransaction.commit()
     }
 
+    func fitBounds(bounds: GeoRectBounds, padding: Int) {
+        guard let mapView = mapView,
+              let sw = bounds.southWest,
+              let ne = bounds.northEast else { return }
+        let coordinateBounds = GMSCoordinateBounds(
+            coordinate: CLLocationCoordinate2D(latitude: sw.latitude, longitude: sw.longitude),
+            coordinate: CLLocationCoordinate2D(latitude: ne.latitude, longitude: ne.longitude)
+        )
+        let update = GMSCameraUpdate.fit(coordinateBounds, withPadding: CGFloat(padding))
+        mapView.moveCamera(update)
+    }
+
     func notifyCameraMoveStart(_ cameraPosition: MapCameraPosition) {
         cameraMoveStartListener?(cameraPosition)
     }
