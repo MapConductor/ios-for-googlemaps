@@ -245,12 +245,25 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                     return MarkerIconMetrics(size: icon.size, anchor: icon.anchor, infoAnchor: icon.infoAnchor)
                 }
             )
+
+            // Screen-space marker animation layer: shares the info-bubble
+            // container (inserted below the bubbles) and the same projection.
+            markerController.renderer.animationOverlay = MarkerAnimationOverlayCoordinator(
+                container: infoBubbleContainer,
+                project: { [weak self] point in
+                    guard let mapView = self?.mapView else { return nil }
+                    let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                    return mapView.projection.point(for: coordinate)
+                }
+            )
         }
 
         func unbind() {
             state.setController(nil)
             state.setMapViewHolder(nil)
             controller = nil
+            markerController?.renderer.animationOverlay?.unbind()
+            markerController?.renderer.animationOverlay = nil
             markerController?.unbind()
             markerController = nil
             groundImageController?.unbind()
