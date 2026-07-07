@@ -22,6 +22,11 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
     var animateStartListener: OnMarkerEventHandler?
     var animateEndListener: OnMarkerEventHandler?
 
+    /// When set, drop/bounce animations run on the screen-space overlay layer
+    /// (projection-independent: correct on tilted/rotated/globe views) and the
+    /// native marker is hidden for the duration via opacity.
+    var animationOverlay: MarkerAnimationOverlayCoordinator?
+
     init(mapView: GMSMapView?, markerManager: MarkerManager<GMSMarker>) {
         self.mapView = mapView
         self.markerManager = markerManager
@@ -94,6 +99,32 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         duration: CFTimeInterval
     ) async {
         guard let mapView, let marker = entity.marker else { return }
+
+        // Preferred path: animate the marker image on the screen-space overlay.
+        // Unlike the geo-interpolation fallback below, this needs no projection
+        // sanity checks or deferrals, and stays correct on tilted/rotated maps.
+        if let overlay = animationOverlay {
+            marker.opacity = 0
+            animateStartListener?(entity.state)
+            let icon = (entity.state.icon ?? DefaultMarkerIcon()).toBitmapIcon()
+            overlay.start(MarkerAnimationOverlayEntry(
+                id: entity.state.id,
+                state: entity.state,
+                icon: icon,
+                animation: animation,
+                duration: duration,
+                onFinished: { [weak self] in
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    CATransaction.setAnimationDuration(0)
+                    marker.opacity = 1
+                    CATransaction.commit()
+                    entity.state.animate(nil)
+                    self?.animateEndListener?(entity.state)
+                }
+            ))
+            return
+        }
 
         if markerAnimationRunners.count >= Self.maxConcurrentAnimations {
             applyImmediatePosition(for: entity, to: marker)
