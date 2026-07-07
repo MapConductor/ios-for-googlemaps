@@ -169,6 +169,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private var circleController: GoogleMapCircleController?
         private var polylineController: GoogleMapPolylineController?
         private var polygonController: GoogleMapPolygonController?
+        private var hullPolygonController: GoogleMapPolygonController?
         private var infoBubbleCoordinator: InfoBubbleOverlayCoordinator?
         private lazy var strategyManager = StrategyMarkerManager<GMSMarker, GoogleMapMarkerRenderer>(
             makeRenderer: { [weak self] strategy in
@@ -226,6 +227,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
             let polygonController = GoogleMapPolygonController(mapView: mapView)
             self.polygonController = polygonController
+            self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
 
             let circleController = GoogleMapCircleController(mapView: mapView)
             self.circleController = circleController
@@ -274,6 +276,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             polylineController = nil
             polygonController?.unbind()
             polygonController = nil
+            hullPolygonController?.unbind()
+            hullPolygonController = nil
             circleController?.unbind()
             circleController = nil
             infoBubbleCoordinator?.unbind()
@@ -296,6 +300,12 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             circleController?.syncCircles(content.circles)
             polylineController?.syncPolylines(content.polylines)
             polygonController?.syncPolygons(content.polygons)
+            for handler in content.polygonSyncHandlers {
+                let hullController = hullPolygonController
+                handler.bindPolygonSync { [weak hullController] states in
+                    await hullController?.add(data: states)
+                }
+            }
             infoBubbleCoordinator?.updateAllLayouts()
         }
 
