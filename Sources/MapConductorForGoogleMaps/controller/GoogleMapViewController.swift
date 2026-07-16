@@ -7,6 +7,7 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     let holder: AnyMapViewHolder
     let coroutine = CoroutineScope()
     private weak var mapView: GMSMapView?
+    private(set) var lastLogicalTilt: Double?
 
     private var cameraMoveStartListener: OnCameraMoveHandler?
     private var cameraMoveListener: OnCameraMoveHandler?
@@ -50,12 +51,14 @@ final class GoogleMapViewController: MapViewControllerProtocol {
 
     func moveCamera(position: MapCameraPosition) {
         guard let mapView = mapView else { return }
+        lastLogicalTilt = position.tilt
         let camera = position.toCameraPosition()
         mapView.moveCamera(GMSCameraUpdate.setCamera(camera))
     }
 
     func animateCamera(position: MapCameraPosition, duration: Long) {
         guard let mapView = mapView else { return }
+        lastLogicalTilt = position.tilt
         let camera = position.toCameraPosition()
         let update = GMSCameraUpdate.setCamera(camera)
         CATransaction.begin()

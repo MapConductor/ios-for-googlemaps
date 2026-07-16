@@ -1,7 +1,13 @@
 // swift-tools-version: 5.9
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
+import Foundation
 import PackageDescription
+
+let frameworkLibraryType: Product.Library.LibraryType? =
+    ProcessInfo.processInfo.environment["MAPCONDUCTOR_BUILD_XCFRAMEWORK"] == "1" ? .dynamic : nil
+let usingLocalCore = FileManager.default.fileExists(atPath: "../ios-sdk-core/Package.swift")
+let coreDependency: Package.Dependency = usingLocalCore
+    ? .package(path: "../ios-sdk-core")
+    : .package(url: "https://github.com/MapConductor/ios-sdk-core", from: "1.1.4")
 
 let package = Package(
     name: "mapconductor-for-googlemaps",
@@ -12,11 +18,12 @@ let package = Package(
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "MapConductorForGoogleMaps",
+            type: frameworkLibraryType,
             targets: ["MapConductorForGoogleMaps"]
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/MapConductor/ios-sdk-core", from: "1.1.4"),
+        coreDependency,
         .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "10.0.0"),
     ],
     targets: [

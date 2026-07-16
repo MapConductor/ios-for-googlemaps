@@ -493,7 +493,10 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                     altitude: 0
                 )
             )
-            return camera.toMapCameraPosition(visibleRegion: visibleRegion)
+            return camera.toMapCameraPosition(
+                logicalTiltHint: controller?.lastLogicalTilt,
+                visibleRegion: visibleRegion
+            )
         }
 
         fileprivate func attachInfoBubbleContainer(to hostView: UIView) {
