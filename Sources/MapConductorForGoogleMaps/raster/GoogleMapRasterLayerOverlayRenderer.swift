@@ -143,7 +143,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
                         tileSize: RasterSource.defaultTileSize,
                         minZoom: nil,
                         maxZoom: nil,
-                        attribution: nil,
+                        attributionRules: [],
                         scheme: .XYZ
                     )
                 )

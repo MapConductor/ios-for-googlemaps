@@ -7,9 +7,11 @@ public typealias GoogleMapDesignType = any GoogleMapDesignTypeProtocol
 
 public struct GoogleMapDesign: GoogleMapDesignTypeProtocol, Hashable {
     public let id: GMSMapViewType
+    public let attributionRules: [AttributionRule]
 
-    public init(id: GMSMapViewType) {
+    public init(id: GMSMapViewType, attributionRules: [AttributionRule] = []) {
         self.id = id
+        self.attributionRules = attributionRules
     }
 
     public func getValue() -> GMSMapViewType {
