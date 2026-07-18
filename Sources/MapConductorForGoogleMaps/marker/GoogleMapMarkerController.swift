@@ -138,7 +138,11 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
         let state = tileRenderer.hitTest(
             screenPoint: screenPoint,
             markerIds: tiledMarkerIds,
-            zoom: Int(mapView.camera.zoom.rounded())
+            zoom: Int(mapView.camera.zoom.rounded()),
+            unproject: { point in
+                let coordinate = mapView.projection.coordinate(for: point)
+                return GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0)
+            }
         ) { point in
             mapView.projection.point(for: CLLocationCoordinate2D(
                 latitude: point.latitude,
