@@ -6,14 +6,7 @@ import UIKit
 
 public struct GoogleMapView: View {
     @ObservedObject private var state: GoogleMapViewState
-
-    private let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
-    private let onMapClick: OnMapEventHandler?
-    private let onMapLongClick: OnMapEventHandler?
-    private let onCameraMoveStart: OnCameraMoveHandler?
-    private let onCameraMove: OnCameraMoveHandler?
-    private let onCameraMoveEnd: OnCameraMoveHandler?
-    private let sdkInitialize: (() -> Void)?
+    private let handlers: MapViewHandlers<GoogleMapViewState>
     private let content: () -> MapViewContent
 
     public init(
@@ -28,37 +21,29 @@ public struct GoogleMapView: View {
         @MapViewContentBuilder content: @escaping () -> MapViewContent = { MapViewContent() }
     ) {
         self.state = state
-        self.onMapLoaded = onMapLoaded
-        self.onMapClick = onMapClick
-        self.onMapLongClick = onMapLongClick
-        self.onCameraMoveStart = onCameraMoveStart
-        self.onCameraMove = onCameraMove
-        self.onCameraMoveEnd = onCameraMoveEnd
-        self.sdkInitialize = sdkInitialize
+        self.handlers = MapViewHandlers(
+            onMapLoaded: onMapLoaded,
+            onMapClick: onMapClick,
+            onMapLongClick: onMapLongClick,
+            onCameraMoveStart: onCameraMoveStart,
+            onCameraMove: onCameraMove,
+            onCameraMoveEnd: onCameraMoveEnd,
+            sdkInitialize: sdkInitialize
+        )
         self.content = content
     }
 
     public var body: some View {
         let mapContent = content()
-        return ZStack {
+        return MapViewBase(
+            attributionRules: state.mapDesignType.attributionRules,
+            camera: state.cameraPosition,
+            content: mapContent
+        ) {
             GoogleMapViewRepresentable(
                 state: state,
-                onMapLoaded: onMapLoaded,
-                onMapClick: onMapClick,
-                onMapLongClick: onMapLongClick,
-                onCameraMoveStart: onCameraMoveStart,
-                onCameraMove: onCameraMove,
-                onCameraMoveEnd: onCameraMoveEnd,
-                sdkInitialize: sdkInitialize,
+                handlers: handlers,
                 content: mapContent
-            )
-            ForEach(0..<mapContent.views.count, id: \.self) { index in
-                mapContent.views[index]
-            }
-            MapAttributionOverlay(
-                designRules: state.mapDesignType.attributionRules,
-                rasterLayers: mapContent.rasterLayers,
-                camera: state.cameraPosition
             )
         }
     }
@@ -90,30 +75,15 @@ private final class GoogleMapWrapperView: UIView {
 
 private struct GoogleMapViewRepresentable: UIViewRepresentable {
     @ObservedObject var state: GoogleMapViewState
-
-    let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
-    let onMapClick: OnMapEventHandler?
-    let onMapLongClick: OnMapEventHandler?
-    let onCameraMoveStart: OnCameraMoveHandler?
-    let onCameraMove: OnCameraMoveHandler?
-    let onCameraMoveEnd: OnCameraMoveHandler?
-    let sdkInitialize: (() -> Void)?
+    let handlers: MapViewHandlers<GoogleMapViewState>
     let content: MapViewContent
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            state: state,
-            onMapLoaded: onMapLoaded,
-            onMapClick: onMapClick,
-            onMapLongClick: onMapLongClick,
-            onCameraMoveStart: onCameraMoveStart,
-            onCameraMove: onCameraMove,
-            onCameraMoveEnd: onCameraMoveEnd
-        )
+        Coordinator(state: state, handlers: handlers)
     }
 
     func makeUIView(context: Context) -> GoogleMapWrapperView {
-        if let sdkInitialize = sdkInitialize {
+        if let sdkInitialize = handlers.sdkInitialize {
             Coordinator.runOnce(sdkInitialize)
         }
 
@@ -155,17 +125,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, GMSMapViewDelegate {
-        private static var hasInitializedSdk = false
-
-        private let state: GoogleMapViewState
-        private let onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?
-        private let onMapClick: OnMapEventHandler?
-        private let onMapLongClick: OnMapEventHandler?
-        private let onCameraMoveStart: OnCameraMoveHandler?
-        private let onCameraMove: OnCameraMoveHandler?
-        private let onCameraMoveEnd: OnCameraMoveHandler?
-
+    final class Coordinator: MapViewCoordinatorBase<GoogleMapViewState>, GMSMapViewDelegate {
         weak var mapView: GMSMapView?
         private var controller: GoogleMapViewController?
         private var markerController: GoogleMapMarkerController?
@@ -175,6 +135,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         private var polylineController: GoogleMapPolylineController?
         private var polygonController: GoogleMapPolygonController?
         private var hullPolygonController: GoogleMapPolygonController?
+        private var overlayScope: MapOverlayScope?
         private var infoBubbleCoordinator: InfoBubbleOverlayCoordinator?
         private lazy var strategyManager = StrategyMarkerManager<GMSMarker, GoogleMapMarkerRenderer>(
             makeRenderer: { [weak self] strategy in
@@ -183,38 +144,11 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             }
         )
 
-        private var didCallMapLoaded = false
-        fileprivate let infoBubbleContainer = PassthroughContainerView()
-
-        init(
-            state: GoogleMapViewState,
-            onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>?,
-            onMapClick: OnMapEventHandler?,
-            onMapLongClick: OnMapEventHandler?,
-            onCameraMoveStart: OnCameraMoveHandler?,
-            onCameraMove: OnCameraMoveHandler?,
-            onCameraMoveEnd: OnCameraMoveHandler?
-        ) {
-            self.state = state
-            self.onMapLoaded = onMapLoaded
-            self.onMapClick = onMapClick
-            self.onMapLongClick = onMapLongClick
-            self.onCameraMoveStart = onCameraMoveStart
-            self.onCameraMove = onCameraMove
-            self.onCameraMoveEnd = onCameraMoveEnd
-        }
-
-        static func runOnce(_ initializer: () -> Void) {
-            if hasInitializedSdk { return }
-            hasInitializedSdk = true
-            initializer()
-        }
-
         func bind(state: GoogleMapViewState, mapView: GMSMapView) {
             let controller = GoogleMapViewController(mapView: mapView)
             self.controller = controller
             state.setController(controller)
-            state.setMapViewHolder(controller.holder)
+            state.setMapViewHolder(controller.typedHolder)
 
             let markerController = GoogleMapMarkerController(mapView: mapView) { [weak self] id in
                 self?.infoBubbleCoordinator?.updateInfoBubblePosition(for: id)
@@ -236,6 +170,17 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
             let circleController = GoogleMapCircleController(mapView: mapView)
             self.circleController = circleController
+
+            // Route the simple overlays through the shared collector so each
+            // controller subscribes to one source of truth instead of the map
+            // host re-diffing arrays every render.
+            let overlayScope = MapOverlayScope()
+            self.overlayScope = overlayScope
+            bindOverlayCollector(overlayScope.circleCollector, to: circleController)
+            bindOverlayCollector(overlayScope.polylineCollector, to: polylineController)
+            bindOverlayCollector(overlayScope.polygonCollector, to: polygonController)
+            bindOverlayCollector(overlayScope.rasterLayerCollector, to: rasterController)
+            bindOverlayCollector(overlayScope.groundImageCollector, to: groundImageController)
 
             self.infoBubbleCoordinator = InfoBubbleOverlayCoordinator(
                 container: infoBubbleContainer,
@@ -285,6 +230,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             hullPolygonController = nil
             circleController?.unbind()
             circleController = nil
+            overlayScope?.clear()
+            overlayScope = nil
             infoBubbleCoordinator?.unbind()
             infoBubbleCoordinator = nil
             strategyManager.clear()
@@ -300,11 +247,11 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             if let mapView {
                 strategyManager.update(content: content, initialCamera: currentCameraPosition(from: mapView))
             }
-            groundImageController?.syncGroundImages(content.groundImages)
-            rasterController?.syncRasterLayers(content.rasterLayers)
-            circleController?.syncCircles(content.circles)
-            polylineController?.syncPolylines(content.polylines)
-            polygonController?.syncPolygons(content.polygons)
+            overlayScope?.circleCollector.sync(content.circles.map { $0.state })
+            overlayScope?.polylineCollector.sync(content.polylines.map { $0.state })
+            overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })
+            overlayScope?.rasterLayerCollector.sync(content.rasterLayers.map { $0.state })
+            overlayScope?.groundImageCollector.sync(content.groundImages.map { $0.state })
             for handler in content.polygonSyncHandlers {
                 let hullController = hullPolygonController
                 handler.bindPolygonSync { [weak hullController] states in
@@ -383,8 +330,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             }
             updateInfoBubbleLayouts()
 
-            if !didCallMapLoaded {
-                didCallMapLoaded = true
+            performMapLoadedOnce {
                 controller?.notifyMapInitialized()
                 onMapLoaded?(state)
             }
@@ -502,15 +448,6 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                 logicalTiltHint: controller?.lastLogicalTilt,
                 visibleRegion: visibleRegion
             )
-        }
-
-        fileprivate func attachInfoBubbleContainer(to hostView: UIView) {
-            guard infoBubbleContainer.superview !== hostView else { return }
-            infoBubbleContainer.backgroundColor = .clear
-            infoBubbleContainer.isUserInteractionEnabled = true  // Enable interaction for InfoBubble buttons
-            infoBubbleContainer.frame = hostView.bounds
-            infoBubbleContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            hostView.addSubview(infoBubbleContainer)
         }
 
         fileprivate func updateInfoBubbleLayouts() {

@@ -5,6 +5,7 @@ import QuartzCore
 
 final class GoogleMapViewController: MapViewControllerProtocol {
     let holder: AnyMapViewHolder
+    let typedHolder: GoogleMapViewHolder
     let coroutine = CoroutineScope()
     private weak var mapView: GMSMapView?
     private(set) var lastLogicalTilt: Double?
@@ -18,11 +19,13 @@ final class GoogleMapViewController: MapViewControllerProtocol {
 
     init(mapView: GMSMapView) {
         self.mapView = mapView
-        self.holder = AnyMapViewHolder(GoogleMapViewHolder(mapView: mapView))
+        let typedHolder = GoogleMapViewHolder(mapView: mapView)
+        self.typedHolder = typedHolder
+        self.holder = AnyMapViewHolder(typedHolder)
     }
 
     func clearOverlays() async {
-        mapView?.clear()
+        await mapView?.clear()
     }
 
     func setCameraMoveStartListener(listener: OnCameraMoveHandler?) {
