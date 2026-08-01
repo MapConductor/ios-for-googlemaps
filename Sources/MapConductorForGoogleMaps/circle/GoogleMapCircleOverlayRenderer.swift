@@ -16,7 +16,7 @@ final class GoogleMapCircleOverlayRenderer: AbstractCircleOverlayRenderer<GMSPol
         guard let mapView else { return nil }
         let center = CLLocationCoordinate2D(latitude: state.center.latitude, longitude: state.center.longitude)
         let adjustedRadius = adjustedRadiusMeters(for: state, center: center)
-        let path = makeCirclePath(center: center, radiusMeters: adjustedRadius, geodesic: state.geodesic)
+        let path = makeCirclePath(center: state.center, radiusMeters: adjustedRadius, geodesic: state.geodesic)
 
         let polygon = GMSPolygon(path: path)
         polygon.strokeColor = state.strokeColor
@@ -47,7 +47,7 @@ final class GoogleMapCircleOverlayRenderer: AbstractCircleOverlayRenderer<GMSPol
             let center = CLLocationCoordinate2D(latitude: current.state.center.latitude, longitude: current.state.center.longitude)
             let adjustedRadius = adjustedRadiusMeters(for: current.state, center: center)
             circle.path = makeCirclePath(
-                center: center,
+                center: current.state.center,
                 radiusMeters: adjustedRadius,
                 geodesic: current.state.geodesic
             )
@@ -96,85 +96,17 @@ final class GoogleMapCircleOverlayRenderer: AbstractCircleOverlayRenderer<GMSPol
     }
 }
 
-private let circleSegments = 64
-private let earthRadiusMeters = 6_371_000.0
-
+/// Builds the circle outline from the core `circleToRing` (shared across providers, WGS84
+/// radius) and closes it with `closeRing`.
 private func makeCirclePath(
-    center: CLLocationCoordinate2D,
+    center: GeoPointProtocol,
     radiusMeters: Double,
     geodesic: Bool
 ) -> GMSPath {
-    let points = geodesic
-        ? generateGeodesicCirclePoints(center: center, radiusMeters: radiusMeters)
-        : generateNonGeodesicCirclePoints(center: center, radiusMeters: radiusMeters)
-
+    let ring = closeRing(circleToRing(center: center, radiusMeters: radiusMeters, geodesic: geodesic))
     let path = GMSMutablePath()
-    for point in points {
-        path.add(point)
+    for point in ring {
+        path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
     }
     return path
-}
-
-private func generateGeodesicCirclePoints(
-    center: CLLocationCoordinate2D,
-    radiusMeters: Double
-) -> [CLLocationCoordinate2D] {
-    let centerLat = degreesToRadians(center.latitude)
-    let centerLng = degreesToRadians(center.longitude)
-    let angularDistance = radiusMeters / earthRadiusMeters
-
-    var points: [CLLocationCoordinate2D] = []
-    points.reserveCapacity(circleSegments + 1)
-
-    for i in 0...circleSegments {
-        let bearing = 2.0 * Double.pi * Double(i) / Double(circleSegments)
-        let lat = asin(
-            sin(centerLat) * cos(angularDistance) +
-                cos(centerLat) * sin(angularDistance) * cos(bearing)
-        )
-        let lng = centerLng + atan2(
-            sin(bearing) * sin(angularDistance) * cos(centerLat),
-            cos(angularDistance) - sin(centerLat) * sin(lat)
-        )
-        points.append(
-            CLLocationCoordinate2D(
-                latitude: radiansToDegrees(lat),
-                longitude: radiansToDegrees(lng)
-            )
-        )
-    }
-
-    return points
-}
-
-private func generateNonGeodesicCirclePoints(
-    center: CLLocationCoordinate2D,
-    radiusMeters: Double
-) -> [CLLocationCoordinate2D] {
-    let centerLatRad = degreesToRadians(center.latitude)
-    let latDegreesPerMeter = 1.0 / (earthRadiusMeters * Double.pi / 180.0)
-    let lngDegreesPerMeter = 1.0 / (earthRadiusMeters * Double.pi / 180.0 * cos(centerLatRad))
-
-    var points: [CLLocationCoordinate2D] = []
-    points.reserveCapacity(circleSegments + 1)
-
-    for i in 0...circleSegments {
-        let angle = 2.0 * Double.pi * Double(i) / Double(circleSegments)
-        let dx = radiusMeters * cos(angle)
-        let dy = radiusMeters * sin(angle)
-
-        let latitude = center.latitude + dy * latDegreesPerMeter
-        let longitude = center.longitude + dx * lngDegreesPerMeter
-        points.append(CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
-    }
-
-    return points
-}
-
-private func degreesToRadians(_ degrees: Double) -> Double {
-    degrees * .pi / 180.0
-}
-
-private func radiansToDegrees(_ radians: Double) -> Double {
-    radians * 180.0 / .pi
 }
