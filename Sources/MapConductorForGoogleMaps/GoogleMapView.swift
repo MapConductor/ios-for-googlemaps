@@ -7,10 +7,12 @@ import UIKit
 public struct GoogleMapView: View {
     @ObservedObject private var state: GoogleMapViewState
     private let handlers: MapViewHandlers<GoogleMapViewState>
+    private let cameraRestriction: CameraRestriction?
     private let content: () -> MapViewContent
 
     public init(
         state: GoogleMapViewState,
+        cameraRestriction: CameraRestriction? = nil,
         onMapLoaded: OnMapLoadedHandler<GoogleMapViewState>? = nil,
         onMapClick: OnMapEventHandler? = nil,
         onMapLongClick: OnMapEventHandler? = nil,
@@ -30,11 +32,18 @@ public struct GoogleMapView: View {
             onCameraMoveEnd: onCameraMoveEnd,
             sdkInitialize: sdkInitialize
         )
+        self.cameraRestriction = cameraRestriction
         self.content = content
     }
 
     public var body: some View {
-        let mapContent = content()
+        // The provider's registry is in scope only while content is being assembled —
+        // the same window in which Compose provides `LocalMapServiceRegistry` around the
+        // content lambda. Bracketing the pass lets a removed plugin be noticed.
+        let support = state.serviceRegistry.get(MarkerRenderingSupportKey.self)
+        support?.beginContentPass()
+        let mapContent = MapServiceRegistryScope.with(state.serviceRegistry) { content() }
+        support?.endContentPass()
         return MapViewBase(
             attributionRules: state.mapDesignType.attributionRules,
             camera: state.cameraPosition,
@@ -42,6 +51,7 @@ public struct GoogleMapView: View {
         ) {
             GoogleMapViewRepresentable(
                 state: state,
+                cameraRestriction: cameraRestriction,
                 handlers: handlers,
                 content: mapContent
             )
@@ -75,6 +85,7 @@ private final class GoogleMapWrapperView: UIView {
 
 private struct GoogleMapViewRepresentable: UIViewRepresentable {
     @ObservedObject var state: GoogleMapViewState
+    let cameraRestriction: CameraRestriction?
     let handlers: MapViewHandlers<GoogleMapViewState>
     let content: MapViewContent
 
@@ -91,6 +102,9 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         let mapView = GMSMapView(frame: .zero, camera: camera)
         mapView.mapType = state.mapDesignType.getValue()
         mapView.settings.scrollGestures = state.uiSettings.scrollGesture
+        mapView.settings.zoomGestures = state.uiSettings.zoomGesture
+        mapView.settings.rotateGestures = state.uiSettings.rotateGesture
+        mapView.settings.tiltGestures = state.uiSettings.tiltGesture
         mapView.delegate = context.coordinator
 
         let wrapper = GoogleMapWrapperView(mapView: mapView, overlayContainer: context.coordinator.infoBubbleContainer)
@@ -99,6 +113,9 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         context.coordinator.attachInfoBubbleContainer(to: wrapper)
         context.coordinator.mapView = mapView
         context.coordinator.bind(state: state, mapView: mapView)
+        // android-for-googlemaps の GoogleMapView.kt がコントローラ生成直後に
+        // setCameraRestriction するのと同じ位置。
+        context.coordinator.applyCameraRestriction(cameraRestriction)
         // Ensure overlay controllers subscribe immediately (before the first updateUIView),
         // so early UI actions (e.g. tapping animation buttons) are not missed.
         MCLog.map("GoogleMapView.makeUIView updateContent markers=\(content.markers.count) bubbles=\(content.infoBubbles.count)")
@@ -110,6 +127,11 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: GoogleMapWrapperView, context: Context) {
         uiView.mapView.mapType = state.mapDesignType.getValue()
         uiView.mapView.settings.scrollGestures = state.uiSettings.scrollGesture
+        uiView.mapView.settings.zoomGestures = state.uiSettings.zoomGesture
+        uiView.mapView.settings.rotateGestures = state.uiSettings.rotateGesture
+        uiView.mapView.settings.tiltGestures = state.uiSettings.tiltGesture
+        // 制限値が変わったときだけ再適用する（毎フレーム native API を叩かない）。
+        context.coordinator.applyCameraRestriction(cameraRestriction)
         MCLog.map("GoogleMapView.updateUIView updateContent markers=\(content.markers.count) bubbles=\(content.infoBubbles.count)")
         context.coordinator.updateContent(content)
         context.coordinator.updateInfoBubbleLayouts()
@@ -128,6 +150,12 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
     final class Coordinator: MapViewCoordinatorBase<GoogleMapViewState>, GMSMapViewDelegate {
         weak var mapView: GMSMapView?
         private var controller: GoogleMapViewController?
+
+        /// android-sdk の `cameraRestriction?.let { controller.setCameraRestriction(it) }` 相当。
+        /// 変化検知は `MapViewCoordinatorBase.applyCameraRestriction(_:to:)` が行う。
+        func applyCameraRestriction(_ restriction: CameraRestriction?) {
+            applyCameraRestriction(restriction, to: controller)
+        }
         private var markerController: GoogleMapMarkerController?
         private var groundImageController: GoogleMapGroundImageController?
         private var rasterController: GoogleMapRasterLayerController?
@@ -141,10 +169,21 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             makeRenderer: { [weak self] strategy in
                 guard let mapView = self?.mapView else { fatalError("mapView unavailable") }
                 return GoogleMapMarkerRenderer(mapView: mapView, markerManager: strategy.markerManager)
+            },
+            currentCamera: { [weak self] in
+                guard let self, let mapView = self.mapView else { return nil }
+                return self.currentCameraPosition(from: mapView)
             }
         )
 
         func bind(state: GoogleMapViewState, mapView: GMSMapView) {
+            // Publish marker rendering as a map-scoped capability. Add-on modules resolve it
+            // from the registry; this provider never learns that clustering exists.
+            // 再バインド時に前回の capability が残らないよう、登録前に空にする
+            // （android-sdk の各 *MapView.kt が `registry.clear()` してから put するのと同じ）。
+            state.serviceRegistry.clear()
+            state.serviceRegistry.put(MarkerRenderingSupportKey.self, strategyManager)
+
             let controller = GoogleMapViewController(mapView: mapView)
             self.controller = controller
             state.setController(controller)
@@ -244,9 +283,6 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
             infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
             markerController?.tilingOptions = content.markerTilingOptions
             markerController?.syncMarkers(content.markers)
-            if let mapView {
-                strategyManager.update(content: content, initialCamera: currentCameraPosition(from: mapView))
-            }
             overlayScope?.circleCollector.sync(content.circles.map { $0.state })
             overlayScope?.polylineCollector.sync(content.polylines.map { $0.state })
             overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })

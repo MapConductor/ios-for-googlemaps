@@ -72,8 +72,13 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         entity.polygon?.map = nil
     }
 
-    /// 複数の穴が重なっている場合は結合（union）して重複を解消する
-    /// （android-for-googlemaps と同一仕様）。
+    /// 複数の穴が重なっている場合は結合（union）して重複を解消する。
+    /// 他プロバイダ（ArcGIS/Mapbox/MapLibre/HERE）と同じ `unionHoles()` を用いる。
+    ///
+    /// コンポーネント層（`Polygon`）でも一度ユニオンしているが、そちらは 1 つの state
+    /// インスタンスにつき 1 回しか走らない。頂点ドラッグのように後から `state.holes` が
+    /// 差し替わる経路では未結合の穴がそのまま届くため、android-for-googlemaps と同じく
+    /// ジオメトリを組み立てるここでも結合する。
     private func resolveHoles(_ state: PolygonState) -> PolygonState {
         state.holes.count > 1 ? state.unionHoles() : state
     }
@@ -87,7 +92,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         mapView: GMSMapView
     ) -> GMSPath {
         if !geodesic {
-            return makePath(createLinearInterpolatePoints(points))
+            return makePath(Planar.createInterpolatePoints(points))
         }
 
         let camera = mapView.camera
@@ -105,7 +110,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
             return cached
         }
 
-        let path = makePath(createInterpolatePoints(points, maxSegmentLength: maxSegmentLength))
+        let path = makePath(WGS84Geodesic.createInterpolatePoints(points, maxSegmentLength: maxSegmentLength))
         interpolationCache.put(key, path)
         return path
     }

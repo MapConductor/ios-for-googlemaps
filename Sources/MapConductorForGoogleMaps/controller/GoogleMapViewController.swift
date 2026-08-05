@@ -70,6 +70,26 @@ final class GoogleMapViewController: MapViewControllerProtocol {
         CATransaction.commit()
     }
 
+    func setCameraRestriction(_ restriction: CameraRestriction?) {
+        guard let mapView = mapView else { return }
+        // Google Maps の統一ズームはネイティブズームそのものなので変換不要
+        // （android-for-googlemaps と同一仕様）。
+        if let sw = restriction?.bounds?.southWest, let ne = restriction?.bounds?.northEast {
+            mapView.cameraTargetBounds = GMSCoordinateBounds(
+                coordinate: CLLocationCoordinate2D(latitude: sw.latitude, longitude: sw.longitude),
+                coordinate: CLLocationCoordinate2D(latitude: ne.latitude, longitude: ne.longitude)
+            )
+        } else {
+            mapView.cameraTargetBounds = nil
+        }
+        // preference をクリアするには下限/上限に既定値を渡す必要があるため、
+        // 未指定時は kGMSMinZoomLevel / kGMSMaxZoomLevel へ戻す。
+        mapView.setMinZoom(
+            Float(restriction?.minZoom ?? Double(kGMSMinZoomLevel)),
+            maxZoom: Float(restriction?.maxZoom ?? Double(kGMSMaxZoomLevel))
+        )
+    }
+
     func fitBounds(bounds: GeoRectBounds, padding: Int) {
         guard let mapView = mapView,
               let sw = bounds.southWest,

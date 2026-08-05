@@ -62,7 +62,7 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
 
     private func resolvedPath(for state: PolylineState, mapView: GMSMapView) -> GMSPath {
         if !state.geodesic {
-            let geoPoints = createLinearInterpolatePoints(state.points)
+            let geoPoints = Planar.createInterpolatePoints(state.points)
             let path = GMSMutablePath()
             for point in geoPoints {
                 path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
@@ -85,7 +85,7 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
             return cached
         }
 
-        let geoPoints = createInterpolatePoints(state.points, maxSegmentLength: maxSegmentLength)
+        let geoPoints = WGS84Geodesic.createInterpolatePoints(state.points, maxSegmentLength: maxSegmentLength)
         let path = GMSMutablePath()
         for point in geoPoints {
             path.add(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
