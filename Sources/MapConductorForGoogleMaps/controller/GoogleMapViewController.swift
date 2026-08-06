@@ -7,6 +7,11 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     let holder: AnyMapViewHolder
     let typedHolder: GoogleMapViewHolder
     let coroutine = CoroutineScope()
+
+    /// この地図に紐づくオーバーレイコントローラの登録簿。
+    /// 拡張モジュール（ヒートマップ、マーカークラスタリング等）がここに登録して
+    /// カメラ変更を受け取る。`MapViewControllerProtocol` の要件。
+    let overlayControllers = OverlayControllerRegistry()
     private weak var mapView: GMSMapView?
     private(set) var lastLogicalTilt: Double?
 
@@ -111,6 +116,8 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     }
 
     func notifyCameraMoveEnd(_ cameraPosition: MapCameraPosition) {
+        // 登録済みオーバーレイ（拡張モジュール含む）へ伝播する。
+        overlayControllers.dispatchCameraChanged(cameraPosition)
         cameraMoveEndListener?(cameraPosition)
     }
 
@@ -125,4 +132,16 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     func notifyMapInitialized() {
         mapInitializedListener?(.MapCreated)
     }
+
+    /// ジェスチャの ON/OFF を地図へ適用する。
+    /// android-sdk の `applyUISettings(settings:)` と同じ位置づけ。
+    /// 初回適用はビュー生成時（`makeUIView`）に行い、以降の変更がここを通る。
+    func applyUISettings(_ settings: MapUISettings) {
+        guard let mapView else { return }
+        mapView.settings.scrollGestures = settings.scrollGesture
+        mapView.settings.zoomGestures = settings.zoomGesture
+        mapView.settings.rotateGestures = settings.rotateGesture
+        mapView.settings.tiltGestures = settings.tiltGesture
+    }
+
 }

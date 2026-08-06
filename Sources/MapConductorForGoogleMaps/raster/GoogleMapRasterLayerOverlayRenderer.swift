@@ -75,9 +75,9 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         }
     }
 
+    /// `GMSURLTileLayer` は `userAgent` しか公開していない。`extraHeaders` は載せられない。
     private func logUnsupportedExtraHeadersIfNeeded(_ state: RasterLayerState) {
-        guard let headers = state.extraHeaders, !headers.isEmpty else { return }
-        NSLog("[MapConductor] GoogleMaps RasterLayer: extraHeaders are not supported on iOS and will be ignored. id=%@", state.id)
+        RasterHeaderRuleSet.warnUnsupported(provider: "GoogleMaps", state: state, supportsUserAgent: true)
     }
 
     private func makeTileLayer(from state: RasterLayerState) -> GMSURLTileLayer? {

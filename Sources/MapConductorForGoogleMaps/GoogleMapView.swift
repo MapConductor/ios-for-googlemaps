@@ -126,6 +126,12 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: GoogleMapWrapperView, context: Context) {
         uiView.mapView.mapType = state.mapDesignType.getValue()
+        // ジェスチャはここ（updateUIView）で直接適用する。SwiftUI の同期フックは常に
+        // ネイティブビューを持っているのに対し、コントローラはまだ生成されていない／
+        // まだ mapView を保持していないことがあり、その場合に設定が落ちる（実機の
+        // UISettingsUITests が MapLibre/MapTiler/Mapbox で検出）。
+        // コントローラ側の `applyUISettings` は android-sdk と同じ API を提供するための
+        // 命令的な入口で、同じ値を同じネイティブプロパティへ書く。
         uiView.mapView.settings.scrollGestures = state.uiSettings.scrollGesture
         uiView.mapView.settings.zoomGestures = state.uiSettings.zoomGesture
         uiView.mapView.settings.rotateGestures = state.uiSettings.rotateGesture
@@ -149,7 +155,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
     @MainActor
     final class Coordinator: MapViewCoordinatorBase<GoogleMapViewState>, GMSMapViewDelegate {
         weak var mapView: GMSMapView?
-        private var controller: GoogleMapViewController?
+        // updateUIView から applyUISettings を呼ぶため private を外している。
+        private(set) var controller: GoogleMapViewController?
 
         /// android-sdk の `cameraRestriction?.let { controller.setCameraRestriction(it) }` 相当。
         /// 変化検知は `MapViewCoordinatorBase.applyCameraRestriction(_:to:)` が行う。
@@ -179,14 +186,13 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         func bind(state: GoogleMapViewState, mapView: GMSMapView) {
             // Publish marker rendering as a map-scoped capability. Add-on modules resolve it
             // from the registry; this provider never learns that clustering exists.
-            // 再バインド時に前回の capability が残らないよう、登録前に空にする
-            // （android-sdk の各 *MapView.kt が `registry.clear()` してから put するのと同じ）。
-            state.serviceRegistry.clear()
             state.serviceRegistry.put(MarkerRenderingSupportKey.self, strategyManager)
 
             let controller = GoogleMapViewController(mapView: mapView)
             self.controller = controller
             state.setController(controller)
+            // 拡張モジュール（ヒートマップ等）がオーバーレイコントローラを登録できるようにする。
+            state.serviceRegistry.put(OverlayControllerRegistryKey.self, controller.overlayControllers)
             state.setMapViewHolder(controller.typedHolder)
 
             let markerController = GoogleMapMarkerController(mapView: mapView) { [weak self] id in
@@ -250,6 +256,11 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
         }
 
         func unbind() {
+            // 登録した capability を取り下げる。レジストリの持ち主は state で、ビューより長生きするため、
+            // ここで外さないと破棄済みのコントローラを掴んだまま残る。
+            state.serviceRegistry.removeProviderRegistrations()
+            // 登録済みオーバーレイコントローラ（拡張モジュール含む）を破棄する。
+            controller?.destroy()
             state.setController(nil)
             state.setMapViewHolder(nil)
             controller = nil
