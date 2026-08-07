@@ -140,7 +140,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
                 state.copy(
                     source: .urlTemplate(
                         template: template,
-                        tileSize: RasterSource.defaultTileSize,
+                        tileSize: RasterLayerSource.defaultTileSize,
                         minZoom: nil,
                         maxZoom: nil,
                         attributionRules: [],
