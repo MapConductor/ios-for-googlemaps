@@ -234,6 +234,7 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                     let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
                     return mapView.projection.point(for: coordinate)
                 },
+                projectionGate: screenProjectionGate(feature: "InfoBubble"),
                 resolveMarkerStateForIcon: { [weak markerController] id, bubbleMarker in
                     markerController?.getMarkerState(for: id) ?? bubbleMarker
                 },
@@ -251,7 +252,8 @@ private struct GoogleMapViewRepresentable: UIViewRepresentable {
                     guard let mapView = self?.mapView else { return nil }
                     let coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
                     return mapView.projection.point(for: coordinate)
-                }
+                },
+                projectionGate: screenProjectionGate(feature: "marker animation overlay")
             )
         }
 

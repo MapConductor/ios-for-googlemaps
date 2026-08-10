@@ -73,7 +73,6 @@ public class GoogleMapsZoomAltitudeConverter : MapConductorCore.WebMercatorZoomA
   final public let mapView: GoogleMaps.GMSMapView
   final public let map: GoogleMaps.GMSMapView
   final public func toScreenOffset(position: any MapConductorCore.GeoPointProtocol) -> CoreFoundation.CGPoint?
-  final public func fromScreenOffset(offset: CoreFoundation.CGPoint) async -> MapConductorCore.GeoPoint?
   final public func fromScreenOffsetSync(offset: CoreFoundation.CGPoint) -> MapConductorCore.GeoPoint?
   public typealias ActualMap = GoogleMaps.GMSMapView
   public typealias ActualMapView = GoogleMaps.GMSMapView
