@@ -78,11 +78,8 @@ extension MapConductorCore.MapCameraPosition {
 extension GoogleMaps.GMSCameraPosition {
   public func toMapCameraPosition(logicalTiltHint: Swift.Double? = nil, visibleRegion: MapConductorCore.VisibleRegion? = nil) -> MapConductorCore.MapCameraPosition
 }
-public class GoogleMapsZoomAltitudeConverter : MapConductorCore.ZoomAltitudeConverterProtocol {
-  final public let zoom0Altitude: Swift.Double
-  public init(zoom0Altitude: Swift.Double = 171_319_879.0)
-  public func zoomLevelToAltitude(zoomLevel: Swift.Double, latitude: Swift.Double, tilt: Swift.Double) -> Swift.Double
-  public func altitudeToZoomLevel(altitude: Swift.Double, latitude: Swift.Double, tilt: Swift.Double) -> Swift.Double
+public class GoogleMapsZoomAltitudeConverter : MapConductorCore.WebMercatorZoomAltitudeConverter {
+  public init(zoom0Altitude: Swift.Double = AbstractZoomAltitudeConverter.defaultZoom0Altitude)
   @objc deinit
 }
 @_hasMissingDesignatedInitializers final public class GoogleMapViewHolder : MapConductorCore.MapViewHolderProtocol {
