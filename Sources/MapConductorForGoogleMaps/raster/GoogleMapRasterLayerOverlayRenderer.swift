@@ -1,5 +1,6 @@
 import GoogleMaps
 import MapConductorCore
+import UIKit
 
 @MainActor
 final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRenderer<GMSURLTileLayer> {
@@ -80,6 +81,34 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         RasterHeaderRuleSet.warnUnsupported(provider: "GoogleMaps", state: state, supportsUserAgent: true)
     }
 
+    /// MapConductor の `tileSize`（ポイント）→ この SDK が求める**物理ピクセル**。
+    ///
+    /// `GMSTileLayer.tileSize` は「タイル画像を何**ピクセル**として表示したいか」で、
+    /// ポイントではない（既定 256）。ポイント数をそのまま渡すと、3 倍の端末では
+    /// タイルを 1/3 の大きさで敷きたがるので、SDK は**2 段深いズームのタイル**を要求する。
+    ///
+    /// 実測（地図ズーム 13、`tileSize` 512 の GeoJSON レイヤ、iPhone シミュレータ）:
+    ///
+    /// 実測（地図ズーム 13、`tileSize` 512 の GeoJSON レイヤ、iPhone 17 Pro シミュレータ）:
+    ///
+    /// | 渡す値 | 要求されるタイル z | 線の太さ |
+    /// |---|---|---|
+    /// | 512（ポイントのまま） | 14 | 5px |
+    /// | 512 × 3 = 1536 | 13 | 9px |
+    /// | 512 × 6 = 3072 | 13 | 9px |
+    ///
+    /// **これでも MapLibre（z=12・18px）には届かない。** 1536 と 3072 で結果が同じなので、
+    /// SDK 側が `tileSize` に上限（おそらく 1024）を持っていると見られる。倍率を上げても
+    /// それ以上は動かないので、正直な値である「実際の画素数 × 画面倍率」を渡すに留める。
+    /// 残りの 1 段は SDK に外から効かせる手が無い。
+    ///
+    /// react-for-googlemaps の `tileZoomForGoogleTileSize` が web 側で同じ辻褄合わせを
+    /// している（あちらは CSS ピクセル基準なので倍率は 1）。
+    private static func nativeTileSize(_ tileSize: Int) -> Int {
+        let scale = max(1, Int(UIScreen.main.scale.rounded()))
+        return max(1, tileSize) * scale
+    }
+
     private func makeTileLayer(from state: RasterLayerState) -> GMSURLTileLayer? {
         logUnsupportedExtraHeadersIfNeeded(state)
 
@@ -127,7 +156,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             
             // Do not change the below line
             let layer = GMSURLTileLayer(urlConstructor: urls)
-            layer.tileSize = Int(max(1, tileSize))
+            layer.tileSize = Self.nativeTileSize(tileSize)
             applyUserAgent(layer: layer, state: state)
             return layer
         case .tileJson:
