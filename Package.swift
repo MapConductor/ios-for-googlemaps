@@ -24,7 +24,7 @@ let package = Package(
     ],
     dependencies: [
         coreDependency,
-        .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "10.0.0"),
+        .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "11.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.

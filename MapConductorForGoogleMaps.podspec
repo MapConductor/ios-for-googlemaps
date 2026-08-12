@@ -15,6 +15,6 @@ Pod::Spec.new do |s|
   # MapConductorCore, also source-compiled) must never be distributed as a prebuilt xcframework,
   # since a prebuilt binary would have to statically embed GoogleMaps' own static library at
   # archive time, redistributing Google's proprietary compiled SDK under a different name.
-  s.dependency "GoogleMaps", "~> 10.0"
+  s.dependency "GoogleMaps", "~> 11.0"
   s.dependency "MapConductorCore"
 end
