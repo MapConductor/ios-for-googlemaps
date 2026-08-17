@@ -10,6 +10,16 @@ Even using the wrapper API, you can still access the native Google Maps view if 
 
 https://mapconductor.com/setup/ios/google-maps/
 
+### API key
+
+Call Google's own initialiser once, before the first map is created:
+
+```swift
+GMSServices.provideAPIKey("YOUR_API_KEY")
+```
+
+Read the value from your build configuration rather than committing it.
+
 ## Usage
 
 ```swift
