@@ -1,6 +1,6 @@
 import Foundation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 
 private let converter = GoogleMapsZoomAltitudeConverter(zoom0Altitude: 171_319_879.0)
 
@@ -13,7 +13,7 @@ public extension MapCameraPosition {
                 latitude: position.latitude,
                 longitude: position.longitude,
                 zoom: Float(zoom),
-                bearing: bearing,
+                bearing: CameraBearing.toNativeHeading(bearing),
                 viewingAngle: tilt
             )
         }
@@ -28,14 +28,14 @@ public extension MapCameraPosition {
         let target = Spherical.computeOffset(
             origin: position,
             distance: altitude * tan(tiltAbsRad),
-            heading: bearing
+            heading: CameraBearing.toNativeHeading(bearing)
         )
         
         NSLog("Google (in)position=\(position),(in)tilt=\(tilt), (out)target=\(target), (out)zoom=\(zoom), (out)viewingAngle=\(tiltAbsDeg)")
         return GMSCameraPosition(
             target: CLLocationCoordinate2D(latitude: target.latitude, longitude: target.longitude),
             zoom: Float(zoom),
-            bearing: bearing,
+            bearing: CameraBearing.toNativeHeading(bearing),
             viewingAngle: tiltAbsDeg
         )
     }
@@ -78,7 +78,7 @@ public extension GMSCameraPosition {
         return MapCameraPosition(
             position: position,
             zoom: Double(zoom),
-            bearing: bearing,
+            bearing: CameraBearing.bearingFromNativeHeading(bearing),
             tilt: logicalTilt,
             visibleRegion: visibleRegion
         )
