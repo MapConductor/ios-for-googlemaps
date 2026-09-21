@@ -285,6 +285,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     public func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
         let camera = currentCameraPosition(from: mapView)
         state.updateCameraPosition(camera)
+        markerController?.cameraSettled(zoom: camera.zoom)
         controller?.notifyCameraMoveEnd(camera)
         onCameraMoveEnd?(camera)
         Task { [weak self] in
