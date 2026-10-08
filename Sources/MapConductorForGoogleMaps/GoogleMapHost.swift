@@ -43,6 +43,9 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     )
 
     func bind(state: GoogleMapViewState, mapView: GMSMapView) {
+        // Google uses a 256-point tile grid. Retina pixels are supplied by the
+        // raster adapter; they must not double the renderer's logical paint size.
+        state.registerRasterTilePreference()
         // Publish marker rendering as a map-scoped capability. Add-on modules resolve it
         // from the registry; this provider never learns that clustering exists.
         state.serviceRegistry.put(MarkerRenderingSupportKey.self, strategyManager)
@@ -129,6 +132,8 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         // 登録した capability を取り下げる。レジストリの持ち主は state で、ビューより長生きするため、
         // ここで外さないと破棄済みのコントローラを掴んだまま残る。
         state.serviceRegistry.removeProviderRegistrations()
+        // The tile grid stays the same when the live map view is detached.
+        state.registerRasterTilePreference()
         // 登録済みオーバーレイコントローラ（拡張モジュール含む）を破棄する。
         controller?.destroy()
         state.setController(nil)
