@@ -3,43 +3,60 @@ import MapConductorCore
 import UIKit
 
 @MainActor
-final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRenderer<GMSURLTileLayer> {
+final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRenderer<GMSTileLayer> {
     private weak var mapView: GMSMapView?
+    private var tileSources: [ObjectIdentifier: GoogleRasterTileURLSource] = [:]
 
     init(mapView: GMSMapView?) {
         self.mapView = mapView
         super.init()
     }
 
-    override func createLayer(state: RasterLayerState) async -> GMSURLTileLayer? {
+    override func createLayer(state: RasterLayerState) async -> GMSTileLayer? {
         guard let mapView else { return nil }
         guard let layer = makeTileLayer(from: state) else { return nil }
-        applyVisibility(layer: layer, state: state, mapView: mapView)
         layer.opacity = Float(state.opacity)
-        layer.zIndex = Int32(0)
+        layer.zIndex = Int32(clamping: state.zIndex)
+        applyVisibility(layer: layer, state: state, mapView: mapView)
         return layer
     }
 
     override func updateLayerProperties(
-        layer: GMSURLTileLayer,
-        current: RasterLayerEntity<GMSURLTileLayer>,
-        prev: RasterLayerEntity<GMSURLTileLayer>
-    ) async -> GMSURLTileLayer? {
+        layer: GMSTileLayer,
+        current: RasterLayerEntity<GMSTileLayer>,
+        prev: RasterLayerEntity<GMSTileLayer>
+    ) async -> GMSTileLayer? {
         let finger = current.fingerPrint
         let prevFinger = prev.fingerPrint
 
-        if finger.source != prevFinger.source {
+        var refreshTiles = false
+        if finger.source != prevFinger.source,
+           let source = tileSources[ObjectIdentifier(layer)],
+           (layer is GoogleLocalTileLayer) == isLocalSource(current.state.source),
+           source.update(current.state.source) {
+            // Keep the attached layer and its draw order. The constructor
+            // reads the latest template when Google requests refreshed tiles.
+            (layer as? GoogleLocalTileLayer)?.cancelRequests()
+            refreshTiles = true
+        } else if finger.source != prevFinger.source {
+            tileSources.removeValue(forKey: ObjectIdentifier(layer))
+            localLayers.removeValue(forKey: ObjectIdentifier(layer))
+            (layer as? GoogleLocalTileLayer)?.cancelRequests()
             layer.map = nil
             guard let mapView else { return nil }
             guard let newLayer = makeTileLayer(from: current.state) else { return nil }
-            applyVisibility(layer: newLayer, state: current.state, mapView: mapView)
             newLayer.opacity = Float(current.state.opacity)
-            newLayer.zIndex = Int32(0)
+            newLayer.zIndex = Int32(clamping: current.state.zIndex)
+            applyVisibility(layer: newLayer, state: current.state, mapView: mapView)
             return newLayer
         }
 
         if finger.opacity != prevFinger.opacity {
             layer.opacity = Float(current.state.opacity)
+        }
+
+        if finger.zIndex != prevFinger.zIndex {
+            layer.zIndex = Int32(clamping: current.state.zIndex)
         }
 
         if finger.visible != prevFinger.visible {
@@ -55,18 +72,50 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             logUnsupportedExtraHeadersIfNeeded(current.state)
         }
 
+        if refreshTiles { layer.clearTileCache() }
+
         return layer
     }
 
-    override func removeLayer(entity: RasterLayerEntity<GMSURLTileLayer>) async {
+    override func removeLayer(entity: RasterLayerEntity<GMSTileLayer>) async {
+        if let layer = entity.layer {
+            tileSources.removeValue(forKey: ObjectIdentifier(layer))
+            localLayers.removeValue(forKey: ObjectIdentifier(layer))
+        }
+        (entity.layer as? GoogleLocalTileLayer)?.cancelRequests()
         entity.layer?.map = nil
     }
 
-    private func applyVisibility(layer: GMSURLTileLayer, state: RasterLayerState, mapView: GMSMapView) {
+    func cameraChanged(zoom: Double) {
+        for layer in localLayers.values {
+            layer.cameraChanged(zoom: zoom)
+        }
+    }
+
+    func detachLocalLayers() {
+        for layer in localLayers.values {
+            layer.cancelRequests()
+            layer.map = nil
+        }
+        localLayers.removeAll()
+        tileSources.removeAll()
+    }
+
+    private var localLayers: [ObjectIdentifier: GoogleLocalTileLayer] = [:]
+
+    private func isLocalSource(_ source: RasterLayerSource) -> Bool {
+        guard case let .urlTemplate(template, _, _, _, _, _) = source else { return false }
+        guard template.hasPrefix("http://127.0.0.1:") else { return false }
+        return template.hasPrefix(TileServerRegistry.get().baseUrl + "/tiles/")
+    }
+
+    private func applyVisibility(layer: GMSTileLayer, state: RasterLayerState, mapView: GMSMapView) {
+        if !state.visible { (layer as? GoogleLocalTileLayer)?.cancelRequests() }
         layer.map = state.visible ? mapView : nil
     }
 
-    private func applyUserAgent(layer: GMSURLTileLayer, state: RasterLayerState) {
+    private func applyUserAgent(layer: GMSTileLayer, state: RasterLayerState) {
+        guard let layer = layer as? GMSURLTileLayer else { return }
         let ua = state.userAgent?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         if let ua, !ua.isEmpty {
             layer.userAgent = ua
@@ -109,7 +158,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         return max(1, tileSize) * scale
     }
 
-    private func makeTileLayer(from state: RasterLayerState) -> GMSURLTileLayer? {
+    private func makeTileLayer(from state: RasterLayerState) -> GMSTileLayer? {
         logUnsupportedExtraHeadersIfNeeded(state)
 
         switch state.source {
@@ -124,38 +173,23 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
              *   layer.userAgent = @"SDK user agent";
              *   layer.map = map;
              */
-        case let .urlTemplate(template, tileSize, minZoom, maxZoom, _, scheme):
+        case let .urlTemplate(_, tileSize, _, _, _, _):
+            guard let source = GoogleRasterTileURLSource(state.source) else { return nil }
+            if isLocalSource(state.source) {
+                let layer = GoogleLocalTileLayer(source: source, server: TileServerRegistry.get(), logicalTileSize: tileSize)
+                localLayers[ObjectIdentifier(layer)] = layer
+                tileSources[ObjectIdentifier(layer)] = source
+                layer.tileSize = Self.nativeTileSize(tileSize)
+                if let mapView { layer.cameraChanged(zoom: Double(mapView.camera.zoom)) }
+                return layer
+            }
             let urls: GMSTileURLConstructor = { (x, y, zoom) in
-                let zoomInt = Int(zoom)
-                if let minZoom {
-                    if zoomInt < minZoom {
-                        return nil
-                    }
-                }
-                if let maxZoom {
-                    if zoomInt > maxZoom {
-                        return nil
-                    }
-                }
-
-                let tileY: UInt
-                switch scheme {
-                case .XYZ:
-                    tileY = y
-                case .TMS:
-                    let max = 1 << zoomInt
-                    tileY = UInt(max - 1 - Int(y))
-                }
-
-                let url = template
-                    .replacingOccurrences(of: "{z}", with: String(zoomInt))
-                    .replacingOccurrences(of: "{y}", with: String(tileY))
-                    .replacingOccurrences(of: "{x}", with: String(x))
-                return URL(string: url)
+                source.url(x: x, y: y, zoom: zoom)
             }
             
             // Do not change the below line
             let layer = GMSURLTileLayer(urlConstructor: urls)
+            tileSources[ObjectIdentifier(layer)] = source
             layer.tileSize = Self.nativeTileSize(tileSize)
             applyUserAgent(layer: layer, state: state)
             return layer
@@ -178,5 +212,51 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
                 )
             return makeTileLayer(from: arcGisState)
         }
+    }
+}
+
+/// The SDK retains its constructor. Protect its configuration independently
+/// of the main-actor renderer so a callback never reads partially updated data.
+final class GoogleRasterTileURLSource {
+    private let lock = NSLock()
+    private var source: RasterLayerSource
+    private let tileSize: Int
+
+    init?(_ source: RasterLayerSource) {
+        guard case let .urlTemplate(_, tileSize, _, _, _, _) = source else { return nil }
+        self.source = source
+        self.tileSize = tileSize
+    }
+
+    /// A different tile grid needs a new layer; URL and coverage changes do not.
+    func update(_ next: RasterLayerSource) -> Bool {
+        guard case let .urlTemplate(_, size, _, _, _, _) = next, size == tileSize else {
+            return false
+        }
+        lock.lock()
+        source = next
+        lock.unlock()
+        return true
+    }
+
+    func url(x: UInt, y: UInt, zoom: UInt) -> URL? {
+        lock.lock()
+        let current = source
+        lock.unlock()
+        guard case let .urlTemplate(template, _, minZoom, maxZoom, _, scheme) = current else {
+            return nil
+        }
+        guard zoom < UInt(Int.bitWidth - 1) else { return nil }
+        let z = Int(zoom)
+        if let minZoom, z < minZoom { return nil }
+        if let maxZoom, z > maxZoom { return nil }
+        // The supported map zoom range is far below the integer shift limit.
+        let extent = UInt(1 << z)
+        guard scheme != .TMS || y < extent else { return nil }
+        let tileY = scheme == .TMS ? extent - 1 - y : y
+        return URL(string: template
+            .replacingOccurrences(of: "{z}", with: String(z))
+            .replacingOccurrences(of: "{x}", with: String(x))
+            .replacingOccurrences(of: "{y}", with: String(tileY)))
     }
 }

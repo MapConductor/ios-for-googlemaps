@@ -36,5 +36,9 @@ let package = Package(
                 .product(name: "GoogleMaps", package: "ios-maps-sdk"),
             ],
         ),
+        .testTarget(
+            name: "MapConductorForGoogleMapsTests",
+            dependencies: ["MapConductorForGoogleMaps"]
+        ),
     ]
 )
