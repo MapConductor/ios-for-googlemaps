@@ -20,6 +20,11 @@ final class GoogleLocalTileLayer: GMSTileLayer {
     private var lastCameraZoom: Double?
     private var lastCamera: GMSCameraPosition?
 
+    nonisolated static func sourceZoomOffset(requestedZoom: UInt, cameraZoom: Double, logicalTileSize: Int) -> Int {
+        let nominal = Double(requestedZoom) + log2(Double(max(1, logicalTileSize)) / 512.0)
+        return max(0, min(8, Int(nominal - floor(cameraZoom - 1))))
+    }
+
     init(source: GoogleRasterTileURLSource, server: LocalTileServer, logicalTileSize: Int) {
         self.source = source
         self.logicalTileSize = logicalTileSize
@@ -59,9 +64,18 @@ final class GoogleLocalTileLayer: GMSTileLayer {
     }
 
     private func requestTileOnMain(x: UInt, y: UInt, zoom: UInt, receiver: GMSTileReceiver) {
-        guard let url = source.url(x: x, y: y, zoom: zoom) else {
+        guard var url = source.url(x: x, y: y, zoom: zoom) else {
             receiver.receiveTileWith(x: x, y: y, zoom: zoom, image: kGMSTileLayerNoTile)
             return
+        }
+        // Google rounds the target raster level; vector sources use floor.
+        // Render each subdivision with the parent's data, style zoom and paint scale.
+        if let cameraZoom = map.map({ Double($0.camera.zoom) }) ?? lastCameraZoom {
+            let offset = Self.sourceZoomOffset(requestedZoom: zoom, cameraZoom: cameraZoom, logicalTileSize: logicalTileSize)
+            if offset > 0, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "sourceZoomOffset", value: String(offset))]
+                url = components.url ?? url
+            }
         }
         // A new delivery can still be rendering when the last successful
         // tile is more than one second old. Never trim that in-flight batch.
@@ -106,6 +120,11 @@ final class GoogleLocalTileLayer: GMSTileLayer {
             lastCamera = camera
         } else if lastCameraZoom.map({ abs(zoom - $0) > 0.05 }) ?? true {
             recovery.cameraMoved()
+        }
+        if let previous = lastCameraZoom, floor(previous) != floor(zoom) {
+            // The SDK may reuse the same rounded target grid across this
+            // boundary. Refresh after the surviving requests settle.
+            recovery.memoryWarning()
         }
         lastCameraZoom = zoom
         requests.updateZoom(zoom + log2(256.0 / Double(max(1, logicalTileSize))))
