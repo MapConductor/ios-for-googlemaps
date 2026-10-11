@@ -3,6 +3,40 @@ import XCTest
 
 final class GoogleLocalTileRequestQueueTests: XCTestCase {
     @MainActor
+    func testIdleNotificationWaitsForCancelledActiveDelivery() async {
+        let started = expectation(description: "slow render started")
+        let answered = expectation(description: "cancelled receiver answered")
+        let idle = expectation(description: "idle after delivery")
+        let queue = GoogleLocalTileRequestQueue(width: 1) { _, cancelled in
+            started.fulfill()
+            let deadline = Date().addingTimeInterval(5)
+            while !cancelled(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            Thread.sleep(forTimeInterval: 0.1)
+            return Data([1])
+        }
+        var delivered = false
+        var sawCancellation = false
+        queue.onCancelled = { sawCancellation = true }
+        queue.onIdle = {
+            XCTAssertTrue(delivered)
+            XCTAssertTrue(sawCancellation)
+            XCTAssertTrue(queue.isIdle)
+            idle.fulfill()
+        }
+        queue.enqueue(url: URL(string: "http://example.test/slow")!, zoom: 12) {
+            XCTAssertNil($0)
+            delivered = true
+            answered.fulfill()
+        }
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertFalse(queue.isIdle)
+        queue.cancelAll()
+        XCTAssertFalse(queue.isIdle, "Cancellation is not completion; cache clear must still wait")
+        await fulfillment(of: [answered, idle], timeout: 1)
+        queue.onIdle = nil
+    }
+
+    @MainActor
     func testZoomCancelsOldWorkAndStartsCurrentTilesWithoutWaitingForIt() async throws {
         let started = expectation(description: "old renders started")
         started.expectedFulfillmentCount = 2

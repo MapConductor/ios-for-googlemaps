@@ -4,10 +4,12 @@ import UIKit
 
 @MainActor
 final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRenderer<GMSTileLayer> {
+    private weak var layerManager: RasterLayerManager<GMSTileLayer>?
     private weak var mapView: GMSMapView?
     private var tileSources: [ObjectIdentifier: GoogleRasterTileURLSource] = [:]
 
-    init(mapView: GMSMapView?) {
+    init(mapView: GMSMapView?, layerManager: RasterLayerManager<GMSTileLayer>) {
+        self.layerManager = layerManager
         self.mapView = mapView
         super.init()
     }
@@ -34,8 +36,8 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
            let source = tileSources[ObjectIdentifier(layer)],
            (layer is GoogleLocalTileLayer) == isLocalSource(current.state.source),
            source.update(current.state.source) {
-            // Keep the attached layer and its draw order. The constructor
-            // reads the latest template when Google requests refreshed tiles.
+            // URL loaders read the latest template on refresh. Local layers
+            // are replaced below to discard decoded SDK fallback textures.
             (layer as? GoogleLocalTileLayer)?.cancelRequests()
             refreshTiles = true
         } else if finger.source != prevFinger.source {
@@ -72,6 +74,20 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             logUnsupportedExtraHeadersIfNeeded(current.state)
         }
 
+        if refreshTiles, let local = layer as? GoogleLocalTileLayer {
+            // A style generation must also get fresh SDK display state. Late
+            // cancelled answers belong to the retired layer, not its successor.
+            guard let mapView, let next = makeTileLayer(from: current.state) else { return nil }
+            local.onCacheRefresh = nil
+            local.cancelRequests()
+            local.map = nil
+            tileSources.removeValue(forKey: ObjectIdentifier(local))
+            localLayers.removeValue(forKey: ObjectIdentifier(local))
+            next.opacity = Float(current.state.opacity)
+            next.zIndex = Int32(clamping: current.state.zIndex)
+            applyVisibility(layer: next, state: current.state, mapView: mapView)
+            return next
+        }
         if refreshTiles { layer.clearTileCache() }
 
         return layer
@@ -84,6 +100,23 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         }
         (entity.layer as? GoogleLocalTileLayer)?.cancelRequests()
         entity.layer?.map = nil
+    }
+
+    private func replaceCachedLayer(_ previous: GoogleLocalTileLayer) {
+        guard let entity = layerManager?.allEntities().first(where: { $0.layer === previous }),
+              let mapView, previous.map != nil,
+              let next = makeTileLayer(from: entity.state) as? GoogleLocalTileLayer else { return }
+        next.inheritRefreshState(from: previous)
+        next.opacity = previous.opacity
+        next.zIndex = previous.zIndex
+        next.fadeIn = previous.fadeIn
+        previous.onCacheRefresh = nil
+        previous.cancelRequests()
+        previous.map = nil
+        tileSources.removeValue(forKey: ObjectIdentifier(previous))
+        localLayers.removeValue(forKey: ObjectIdentifier(previous))
+        entity.layer = next
+        next.map = mapView
     }
 
     func cameraChanged(zoom: Double) {
@@ -177,6 +210,10 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             guard let source = GoogleRasterTileURLSource(state.source) else { return nil }
             if isLocalSource(state.source) {
                 let layer = GoogleLocalTileLayer(source: source, server: TileServerRegistry.get(), logicalTileSize: tileSize)
+                layer.onCacheRefresh = { [weak self, weak layer] in
+                    guard let layer else { return }
+                    self?.replaceCachedLayer(layer)
+                }
                 localLayers[ObjectIdentifier(layer)] = layer
                 tileSources[ObjectIdentifier(layer)] = source
                 layer.tileSize = Self.nativeTileSize(tileSize)

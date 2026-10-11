@@ -8,7 +8,7 @@ final class GoogleMapRasterLayerController: RasterLayerController<GMSTileLayer, 
     init(mapView: GMSMapView?) {
         self.mapView = mapView
         let rasterManager = RasterLayerManager<GMSTileLayer>()
-        let renderer = GoogleMapRasterLayerOverlayRenderer(mapView: mapView)
+        let renderer = GoogleMapRasterLayerOverlayRenderer(mapView: mapView, layerManager: rasterManager)
         super.init(rasterLayerManager: rasterManager, renderer: renderer)
     }
 
