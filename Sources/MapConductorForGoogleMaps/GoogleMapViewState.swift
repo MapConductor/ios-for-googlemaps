@@ -27,6 +27,7 @@ public final class GoogleMapViewState: MapViewState<GoogleMapDesignType> {
     ) {
         self._mapDesignType = mapDesignType
         super.init(id: id, initialCameraPosition: cameraPosition, uiSettings: uiSettings)
+        registerRasterTilePreference()
     }
 
     public convenience init(
@@ -35,6 +36,15 @@ public final class GoogleMapViewState: MapViewState<GoogleMapDesignType> {
         uiSettings: MapUISettings = MapUISettings()
     ) {
         self.init(id: UUID().uuidString, mapDesignType: mapDesignType, cameraPosition: cameraPosition, uiSettings: uiSettings)
+    }
+
+    // This is a property of Google's tile grid, available before a map view binds.
+    // Offline packages can mount immediately without waiting for network or a camera update.
+    func registerRasterTilePreference() {
+        serviceRegistry.put(
+            RasterTilePreferenceKey.self,
+            FixedRasterTilePreference(preferredTileSize: 256)
+        )
     }
 
     /// アプリが `state.getMapViewHolder()?.map` でネイティブの地図を取れる形を保つための絞り込み。
