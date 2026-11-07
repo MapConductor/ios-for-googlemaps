@@ -246,6 +246,7 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
             defaultMarkerIcon: defaultMarkerIconForTiling,
             tilingEnabled: tilingOptions.enabled,
             tiledMarkerIds: &localTiledMarkerIds,
+            addedTracker: addedTracker,
             shouldTile: { [shouldTileAll] _ in shouldTileAll }
         )
         tiledMarkerIds = localTiledMarkerIds
@@ -256,6 +257,9 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
             tileVersion += 1
             updateTileLayer(hasTiledMarkers: result.hasTiledMarkers)
         }
+
+        // The newly tiled markers are on the map once their tile layer is.
+        await addedTracker.admitAndNotify(result.tiledAdded)
     }
 
     /**
