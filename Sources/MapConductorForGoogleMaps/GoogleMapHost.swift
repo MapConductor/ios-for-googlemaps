@@ -1,6 +1,6 @@
 import Foundation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import UIKit
 
 /// 地図一式（`GMSMapView` + コントローラ群 + オーバーレイ結線）を保持するホスト。
@@ -73,6 +73,17 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
 
         let polygonController = GoogleMapPolygonController(mapView: mapView)
         self.polygonController = polygonController
+        // Many polygons are drawn into raster tiles and shown as one tile layer;
+        // taps still resolve against the original shapes.
+        let polygonTiler = PolygonTiler()
+        polygonTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: PolygonTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(PolygonTiler.layerId)
+            }
+        }
+        polygonController.tiler = polygonTiler
         self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
 
         let circleController = GoogleMapCircleController(mapView: mapView)
@@ -172,6 +183,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         overlayScope?.circleCollector.sync(content.circles.map { $0.state })
         overlayScope?.polylineCollector.sync(content.polylines.map { $0.state })
         overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })
+        polygonController?.tiler?.refreshIfServerMoved()
         overlayScope?.rasterLayerCollector.sync(content.rasterLayers.map { $0.state })
         overlayScope?.groundImageCollector.sync(content.groundImages.map { $0.state })
         for handler in content.polygonSyncHandlers {
