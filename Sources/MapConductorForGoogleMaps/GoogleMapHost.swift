@@ -138,6 +138,8 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         await groundImageController?.clear()
         await circleController?.clear()
         await rasterController?.clear()
+        // strategy（クラスタリングなど）が描いたマーカーも消す。
+        await state.serviceRegistry.clearMarkerRendering()
     }
 
     public func unbind() {
