@@ -110,7 +110,9 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
             return cached
         }
 
-        let path = makePath(WGS84Geodesic.createInterpolatePoints(points, maxSegmentLength: maxSegmentLength))
+        // リングの閉じる辺（末尾 → 先頭）も大圏で補間する。隣り合う点の間だけを補間すると、閉じる辺が
+        // 直線の弦になり、塗りも輪郭（同じ GMSPolygon の stroke）もそこだけ直線になる。
+        let path = makePath(densifyGeodesicRing(points, maxSegmentLength: maxSegmentLength))
         interpolationCache.put(key, path)
         return path
     }
