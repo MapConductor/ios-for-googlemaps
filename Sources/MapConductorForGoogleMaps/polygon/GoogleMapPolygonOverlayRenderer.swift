@@ -1,5 +1,5 @@
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import UIKit
 
 @MainActor
@@ -22,7 +22,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         polygon.strokeWidth = CGFloat(resolved.strokeWidth)
         polygon.fillColor = resolved.fillColor
         polygon.geodesic = resolved.geodesic
-        polygon.zIndex = Int32(truncatingIfNeeded: resolved.zIndex)
+        polygon.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.polygon, zIndex: resolved.zIndex))
         polygon.holes = resolved.holes.map { holePoints in
             ringPath(for: holePoints, geodesic: resolved.geodesic, mapView: mapView)
         }
@@ -62,7 +62,7 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         }
 
         if finger.zIndex != prevFinger.zIndex {
-            polygon.zIndex = Int32(truncatingIfNeeded: current.state.zIndex)
+            polygon.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.polygon, zIndex: current.state.zIndex))
         }
 
         return polygon
