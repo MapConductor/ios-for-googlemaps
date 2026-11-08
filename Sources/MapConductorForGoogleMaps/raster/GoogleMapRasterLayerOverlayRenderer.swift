@@ -1,5 +1,5 @@
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import UIKit
 
 @MainActor
@@ -18,7 +18,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         guard let mapView else { return nil }
         guard let layer = makeTileLayer(from: state) else { return nil }
         layer.opacity = Float(state.opacity)
-        layer.zIndex = Int32(clamping: state.zIndex)
+        layer.zIndex = OverlayStacking.globalZIndex(OverlayStacking.rasterKey(stateId: state.id, zIndex: state.zIndex))
         applyVisibility(layer: layer, state: state, mapView: mapView)
         return layer
     }
@@ -48,7 +48,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             guard let mapView else { return nil }
             guard let newLayer = makeTileLayer(from: current.state) else { return nil }
             newLayer.opacity = Float(current.state.opacity)
-            newLayer.zIndex = Int32(clamping: current.state.zIndex)
+            newLayer.zIndex = OverlayStacking.globalZIndex(OverlayStacking.rasterKey(stateId: current.state.id, zIndex: current.state.zIndex))
             applyVisibility(layer: newLayer, state: current.state, mapView: mapView)
             return newLayer
         }
@@ -58,7 +58,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
         }
 
         if finger.zIndex != prevFinger.zIndex {
-            layer.zIndex = Int32(clamping: current.state.zIndex)
+            layer.zIndex = OverlayStacking.globalZIndex(OverlayStacking.rasterKey(stateId: current.state.id, zIndex: current.state.zIndex))
         }
 
         if finger.visible != prevFinger.visible {
@@ -84,7 +84,7 @@ final class GoogleMapRasterLayerOverlayRenderer: AbstractRasterLayerOverlayRende
             tileSources.removeValue(forKey: ObjectIdentifier(local))
             localLayers.removeValue(forKey: ObjectIdentifier(local))
             next.opacity = Float(current.state.opacity)
-            next.zIndex = Int32(clamping: current.state.zIndex)
+            next.zIndex = OverlayStacking.globalZIndex(OverlayStacking.rasterKey(stateId: current.state.id, zIndex: current.state.zIndex))
             applyVisibility(layer: next, state: current.state, mapView: mapView)
             return next
         }
