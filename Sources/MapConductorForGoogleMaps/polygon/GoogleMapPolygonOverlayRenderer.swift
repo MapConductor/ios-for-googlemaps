@@ -92,7 +92,9 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
         mapView: GMSMapView
     ) -> GMSPath {
         if !geodesic {
-            return makePath(Planar.createInterpolatePoints(points))
+            // geodesic=false も閉じる辺（末尾 → 先頭）を緯度経度で線形補間する（輪郭のポリラインと同じ線。
+            // 補間しないと閉じる辺だけメルカトルの直線になる）。
+            return makePath(densifyPolygonRing(points, geodesic: false))
         }
 
         let camera = mapView.camera
@@ -110,7 +112,9 @@ final class GoogleMapPolygonOverlayRenderer: AbstractPolygonOverlayRenderer<GMSP
             return cached
         }
 
-        let path = makePath(WGS84Geodesic.createInterpolatePoints(points, maxSegmentLength: maxSegmentLength))
+        // リングの閉じる辺（末尾 → 先頭）も大圏で補間する。隣り合う点の間だけを補間すると、閉じる辺が
+        // 直線の弦になり、塗りも輪郭（同じ GMSPolygon の stroke）もそこだけ直線になる。
+        let path = makePath(densifyPolygonRing(points, geodesic: true, maxSegmentLength: maxSegmentLength))
         interpolationCache.put(key, path)
         return path
     }
