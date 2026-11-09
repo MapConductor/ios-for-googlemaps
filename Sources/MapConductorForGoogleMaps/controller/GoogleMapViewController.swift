@@ -29,8 +29,12 @@ final class GoogleMapViewController: MapViewControllerProtocol {
         self.holder = AnyMapViewHolder(typedHolder)
     }
 
+    /// ``clearOverlays()`` の中身。オーバーレイのコントローラはホストが持っているので、
+    /// ホストが生成時に設定する（android-sdk と同じく、各コントローラの `clear()` を呼ぶ）。
+    var clearOverlaysHandler: (@MainActor () async -> Void)?
+
     func clearOverlays() async {
-        await mapView?.clear()
+        await clearOverlaysHandler?()
     }
 
     func setCameraMoveStartListener(listener: OnCameraMoveHandler?) {
