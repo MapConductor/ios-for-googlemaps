@@ -363,7 +363,8 @@ final class GoogleMapMarkerController: AbstractMarkerController<GMSMarker, Googl
         // タイル差し替え時のフェードを切る。フェード中の升は古い絵と新しい絵の
         // 合成で、そこにジェスチャが重なると途中の絵が残ることがある。
         layer.fadeIn = false
-        layer.zIndex = 0
+        // マーカーのタイルはマーカーと同じ帯（GMSTileLayer の zIndex はポリゴン等と比べられる）。
+        layer.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.marker, zIndex: 0))
         layer.map = mapView
         tileTileLayer = layer
     }

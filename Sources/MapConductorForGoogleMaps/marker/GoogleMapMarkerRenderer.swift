@@ -1,7 +1,7 @@
 import CoreGraphics
 import CoreLocation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 
 @MainActor
 final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
@@ -295,7 +295,7 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         marker.isTappable = state.clickable
         marker.icon = bitmapIcon.bitmap
         marker.groundAnchor = bitmapIcon.anchor
-        marker.zIndex = Int32(state.zIndex ?? 0)
+        marker.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.marker, zIndex: state.zIndex ?? 0))
         // Avoid a 1-frame "flash" at the target position when an animation is specified at
         // construction (or during a state update). Keep it hidden until `onAnimate` repositions
         // it to the offscreen start point.

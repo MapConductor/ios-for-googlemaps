@@ -1,6 +1,6 @@
 import CoreLocation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 
 @MainActor
 final class GoogleMapGroundImageOverlayRenderer: AbstractGroundImageOverlayRenderer<GMSGroundOverlay> {
@@ -16,6 +16,7 @@ final class GoogleMapGroundImageOverlayRenderer: AbstractGroundImageOverlayRende
         guard let bounds = toCoordinateBounds(state.bounds) else { return nil }
 
         let overlay = GMSGroundOverlay(bounds: bounds, icon: state.image)
+        overlay.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.groundImage, zIndex: 0))
         overlay.opacity = Float(state.opacity)
         overlay.isTappable = false
         overlay.userData = state.id
