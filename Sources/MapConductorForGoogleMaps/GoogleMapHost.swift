@@ -84,6 +84,17 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
             }
         }
         polygonController.tiler = polygonTiler
+        // Many polylines likewise, in their own raster layer in the polyline band
+        // (under the natively drawn polylines); taps still resolve against the original lines.
+        let polylineTiler = PolylineTiler()
+        polylineTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: PolylineTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(PolylineTiler.layerId)
+            }
+        }
+        polylineController.tiler = polylineTiler
         self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
 
         let circleController = GoogleMapCircleController(mapView: mapView)
@@ -198,6 +209,8 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         overlayScope?.polylineCollector.sync(content.polylines.map { $0.state })
         overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })
         polygonController?.tiler?.refreshIfServerMoved()
+        if polylineController?.tiler?.setOptions(content.polylineTilingOptions) == true { overlayScope?.polylineCollector.flush() }
+        polylineController?.tiler?.refreshIfServerMoved()
         overlayScope?.rasterLayerCollector.sync(content.rasterLayers.map { $0.state })
         overlayScope?.groundImageCollector.sync(content.groundImages.map { $0.state })
         for handler in content.polygonSyncHandlers {
