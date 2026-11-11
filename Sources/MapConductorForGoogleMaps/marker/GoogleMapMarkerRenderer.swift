@@ -4,7 +4,7 @@ import GoogleMaps
 @_spi(MapConductorDriver) import MapConductorCore
 
 @MainActor
-final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
+final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol, MarkerDrawOrderFrameReceiver {
     typealias ActualMarker = GMSMarker
 
     /// 同じ zIndex の中を何段に分けるか。±(zIndexSpan + 1) × 2^19 ≈ ±1.07e9 で Int32 に収まる。
@@ -15,6 +15,8 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
     private static let minAnimationUpdateInterval: CFTimeInterval = 1.0 / 4.0
 
     weak var mapView: GMSMapView?
+    /// 重なり順を出すときの地図の向き（``MarkerDrawOrder``）。回すとコントローラが差し替える。
+    private var drawOrderFrame: MarkerDrawOrder.Frame = .northUp
     private let markerManager: MarkerManager<GMSMarker>
     private var markerAnimationRunners: [String: MarkerAnimationRunner] = [:]
     private var deferredAnimateAttemptsById: [String: Int] = [:]
@@ -276,6 +278,28 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         animateEndListener?(entity.state)
     }
 
+    private func drawOrder(_ state: MarkerState) -> Int32 {
+        Int32(MarkerDrawOrder.integerKey(
+            zIndex: state.zIndex,
+            position: state.position,
+            tieSteps: Self.zIndexTieSteps,
+            frame: drawOrderFrame
+        ))
+    }
+
+    /// 回したら、同じ zIndex の中の順位（画面で下ほど手前）を付け直す。
+    func onDrawOrderFrameChanged(_ frame: MarkerDrawOrder.Frame, entities: [MarkerEntity<GMSMarker>]) async {
+        drawOrderFrame = frame
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for entity in entities {
+            guard let marker = entity.marker else { continue }
+            let order = drawOrder(entity.state)
+            if marker.zIndex != order { marker.zIndex = order }
+        }
+        CATransaction.commit()
+    }
+
     func onPostProcess() async {
         // No-op: Google Maps applies changes directly on each marker.
         _ = markerManager
@@ -301,8 +325,8 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         marker.groundAnchor = bitmapIcon.anchor
         // マーカーは zIndex にかかわらず、ほかのオーバーレイとタイルの上に描かれる（GMSMarker は
         // 別の zIndex の組）。帯の位置を足す必要はなく、組の中の並びだけを決めればよい。
-        // 同じ値どうしの順は Google が決めない（undefined）ので、南・西の順位まで整数に詰める。
-        marker.zIndex = Int32(MarkerDrawOrder.integerKey(zIndex: state.zIndex, position: state.position, tieSteps: Self.zIndexTieSteps))
+        // 同じ値どうしの順は Google が決めない（undefined）ので、画面上の順位まで整数に詰める。
+        marker.zIndex = drawOrder(state)
         // Avoid a 1-frame "flash" at the target position when an animation is specified at
         // construction (or during a state update). Keep it hidden until `onAnimate` repositions
         // it to the offscreen start point.
