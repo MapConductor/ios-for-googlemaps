@@ -95,10 +95,20 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
             }
         }
         polylineController.tiler = polylineTiler
-        self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
-
         let circleController = GoogleMapCircleController(mapView: mapView)
         self.circleController = circleController
+
+        let circleTiler = CircleTiler()
+        circleTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: CircleTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(CircleTiler.layerId)
+            }
+        }
+        circleController.tiler = circleTiler
+        self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
+
 
         // Route the simple overlays through the shared collector so each
         // controller subscribes to one source of truth instead of the map
@@ -201,6 +211,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     public func updateContent(_ content: MapViewContent) {
         if let mapView {
             polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
+            circleController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
         }
         infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
         markerController?.tilingOptions = content.markerTilingOptions
@@ -210,7 +221,9 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })
         polygonController?.tiler?.refreshIfServerMoved()
         if polylineController?.tiler?.setOptions(content.polylineTilingOptions) == true { overlayScope?.polylineCollector.flush() }
+        if circleController?.tiler?.setOptions(content.circleTilingOptions) == true { overlayScope?.circleCollector.flush() }
         polylineController?.tiler?.refreshIfServerMoved()
+        circleController?.tiler?.refreshIfServerMoved()
         overlayScope?.rasterLayerCollector.sync(content.rasterLayers.map { $0.state })
         overlayScope?.groundImageCollector.sync(content.groundImages.map { $0.state })
         for handler in content.polygonSyncHandlers {
@@ -279,6 +292,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
 
     public func mapView(_ mapView: GMSMapView, didTapAt coordinate: CLLocationCoordinate2D) {
         polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
+        circleController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
         // Tile-rendered markers have no native tap event; hit-test them by screen proximity.
         let screenPoint = mapView.projection.point(for: coordinate)
         if markerController?.handleTiledMarkerTap(at: screenPoint) == true {
