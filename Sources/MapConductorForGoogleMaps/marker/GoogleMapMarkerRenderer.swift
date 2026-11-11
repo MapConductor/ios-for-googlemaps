@@ -7,6 +7,10 @@ import GoogleMaps
 final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
     typealias ActualMarker = GMSMarker
 
+    /// 同じ zIndex の中を何段に分けるか。±(zIndexSpan + 1) × 2^19 ≈ ±1.07e9 で Int32 に収まる。
+    /// 緯度で約 0.00034 度（数十 m）ごとに区別できる。
+    static let zIndexTieSteps = 1 << 19
+
     private static let maxConcurrentAnimations = 30
     private static let minAnimationUpdateInterval: CFTimeInterval = 1.0 / 4.0
 
@@ -295,7 +299,10 @@ final class GoogleMapMarkerRenderer: MarkerOverlayRendererProtocol {
         marker.isTappable = state.clickable
         marker.icon = bitmapIcon.bitmap
         marker.groundAnchor = bitmapIcon.anchor
-        marker.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.marker, zIndex: state.zIndex ?? 0))
+        // マーカーは zIndex にかかわらず、ほかのオーバーレイとタイルの上に描かれる（GMSMarker は
+        // 別の zIndex の組）。帯の位置を足す必要はなく、組の中の並びだけを決めればよい。
+        // 同じ値どうしの順は Google が決めない（undefined）ので、南・西の順位まで整数に詰める。
+        marker.zIndex = Int32(MarkerDrawOrder.integerKey(zIndex: state.zIndex, position: state.position, tieSteps: Self.zIndexTieSteps))
         // Avoid a 1-frame "flash" at the target position when an animation is specified at
         // construction (or during a state update). Keep it hidden until `onAnimate` repositions
         // it to the offscreen start point.
