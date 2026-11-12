@@ -1,6 +1,6 @@
 import CoreLocation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import QuartzCore
 
 final class GoogleMapViewController: MapViewControllerProtocol {
@@ -14,6 +14,11 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     let overlayControllers = OverlayControllerRegistry()
     private weak var mapView: GMSMapView?
     private(set) var lastLogicalTilt: Double?
+    /// 最後に指定されたパディング。パディングは地図に当てず、カメラの中心をずらして
+    /// 再現し（``CameraPaddingEmulation``）、読み戻しで逆にずらすときに使う。
+    /// android-for-googlemaps と同じく `GMSMapView.padding` は使わない（ロゴやコントロールまで
+    /// 動き、アニメーションの最初でパディングだけが一気に切り替わるため）。
+    private(set) var lastPaddings: MapPaddingsProtocol?
 
     private var cameraMoveStartListener: OnCameraMoveHandler?
     private var cameraMoveListener: OnCameraMoveHandler?
@@ -64,36 +69,76 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     func moveCamera(position: MapCameraPosition) {
         guard let mapView = mapView else { return }
         lastLogicalTilt = position.tilt
-        applyPaddings(position.paddings, to: mapView)
-        let camera = position.toCameraPosition()
+        if let paddings = position.paddings { lastPaddings = paddings }
+        let requested = position.copy(paddings: lastPaddings ?? MapPaddings.Zeros)
+        let camera = paddingApplied(requested).toCameraPosition()
         mapView.moveCamera(GMSCameraUpdate.setCamera(camera))
+        scheduleCorrection(requested)
     }
 
     func animateCamera(position: MapCameraPosition, duration: Long) {
         guard let mapView = mapView else { return }
         lastLogicalTilt = position.tilt
-        let camera = position.toCameraPosition()
+        if let paddings = position.paddings { lastPaddings = paddings }
+        let requested = position.copy(paddings: lastPaddings ?? MapPaddings.Zeros)
+        let camera = paddingApplied(requested).toCameraPosition()
         let update = GMSCameraUpdate.setCamera(camera)
         CATransaction.begin()
         CATransaction.setAnimationDuration(Double(duration) / 1000.0)
-        // パディングの変更も同じ尺でアニメーションさせる（GMSMapView.padding はアニメーション可能）。
-        applyPaddings(position.paddings, to: mapView)
+        CATransaction.setCompletionBlock { [weak self] in
+            self?.scheduleCorrection(requested)
+        }
         mapView.animate(with: update)
         CATransaction.commit()
     }
 
-    /// `MapCameraPosition.paddings` を GMSMapView のパディングにする。カメラのターゲットは
-    /// パディングを除いた領域の中央に来る。`nil` は「今のパディングを変えない」。
-    private func applyPaddings(_ paddings: MapPaddingsProtocol?, to mapView: GMSMapView) {
-        guard let paddings else { return }
-        let insets = UIEdgeInsets(
-            top: paddings.top,
-            left: paddings.left,
-            bottom: paddings.bottom,
-            right: paddings.right
+    /// Google Maps へ渡すカメラ。パディングの分だけ中心をずらす。
+    private func paddingApplied(_ position: MapCameraPosition) -> MapCameraPosition {
+        CameraPaddingEmulation.applied(
+            to: position,
+            fov: googleMapsVerticalFieldOfView,
+            viewportSize: mapView?.bounds.size ?? .zero
         )
-        if mapView.padding != insets {
-            mapView.padding = insets
+    }
+
+    /// 補正の世代。新しい移動が始まったら、前の移動の補正は捨てる。
+    private var correctionGeneration = 0
+
+    /// 補正は地図がカメラを描き終えてから測る（moveCamera の直後は投影がまだ古い）。
+    private func scheduleCorrection(_ requested: MapCameraPosition) {
+        correctionGeneration += 1
+        let generation = correctionGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.correctPaddedTarget(requested, generation: generation)
+        }
+    }
+
+    /// 計算で置いた中心は、Google Maps の tilt の上限（ズームによって 60° より小さい）や
+    /// 縮尺の丸めでずれる。地図の投影で実際の位置を測り、パディングの残りの中央に来るまで
+    /// 中心だけを動かし直す。1 回ごとに反映を待ってから測り直す。
+    private func correctPaddedTarget(_ requested: MapCameraPosition, generation: Int, remaining: Int = 4) {
+        guard remaining > 0, generation == correctionGeneration, let mapView else { return }
+        // GMSMapView はカメラの中心を安全領域の内側の中央に置く（ビューの中央とは限らない）。
+        // ずれは「いまのカメラの中心が描かれている位置」から測って打ち消す。
+        let projection = mapView.projection
+        guard let desired = CameraPaddingEmulation.paddedCenterPoint(
+            paddings: requested.paddings,
+            viewportSize: mapView.bounds.size
+        ) else { return }
+        let actual = projection.point(for: CLLocationCoordinate2D(
+            latitude: requested.position.latitude,
+            longitude: requested.position.longitude
+        ))
+        let deltaX = actual.x - desired.x
+        let deltaY = actual.y - desired.y
+        guard abs(deltaX) >= 0.5 || abs(deltaY) >= 0.5 else { return }
+        let currentCenter = projection.point(for: mapView.camera.target)
+        let center = projection.coordinate(for: CGPoint(x: currentCenter.x + deltaX, y: currentCenter.y + deltaY))
+        mapView.moveCamera(GMSCameraUpdate.setTarget(
+            CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude)
+        ))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.correctPaddedTarget(requested, generation: generation, remaining: remaining - 1)
         }
     }
 
