@@ -467,9 +467,20 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
                 altitude: 0
             )
         )
-        return camera.toMapCameraPosition(
-            logicalTiltHint: controller?.lastLogicalTilt,
-            visibleRegion: visibleRegion
+        // 地図の中心はパディングの分ずらしてある。ターゲット（パディングを除いた領域の中央）へ戻す。
+        let projection = mapView.projection
+        return CameraPaddingEmulation.restored(
+            camera.toMapCameraPosition(
+                logicalTiltHint: controller?.lastLogicalTilt,
+                visibleRegion: visibleRegion
+            ),
+            paddings: controller?.lastPaddings,
+            fov: googleMapsVerticalFieldOfView,
+            viewportSize: mapView.bounds.size,
+            unproject: { point in
+                let coordinate = projection.coordinate(for: point)
+                return GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0)
+            }
         )
     }
 
