@@ -64,6 +64,7 @@ final class GoogleMapViewController: MapViewControllerProtocol {
     func moveCamera(position: MapCameraPosition) {
         guard let mapView = mapView else { return }
         lastLogicalTilt = position.tilt
+        applyPaddings(position.paddings, to: mapView)
         let camera = position.toCameraPosition()
         mapView.moveCamera(GMSCameraUpdate.setCamera(camera))
     }
@@ -75,8 +76,25 @@ final class GoogleMapViewController: MapViewControllerProtocol {
         let update = GMSCameraUpdate.setCamera(camera)
         CATransaction.begin()
         CATransaction.setAnimationDuration(Double(duration) / 1000.0)
+        // パディングの変更も同じ尺でアニメーションさせる（GMSMapView.padding はアニメーション可能）。
+        applyPaddings(position.paddings, to: mapView)
         mapView.animate(with: update)
         CATransaction.commit()
+    }
+
+    /// `MapCameraPosition.paddings` を GMSMapView のパディングにする。カメラのターゲットは
+    /// パディングを除いた領域の中央に来る。`nil` は「今のパディングを変えない」。
+    private func applyPaddings(_ paddings: MapPaddingsProtocol?, to mapView: GMSMapView) {
+        guard let paddings else { return }
+        let insets = UIEdgeInsets(
+            top: paddings.top,
+            left: paddings.left,
+            bottom: paddings.bottom,
+            right: paddings.right
+        )
+        if mapView.padding != insets {
+            mapView.padding = insets
+        }
     }
 
     func setCameraRestriction(_ restriction: CameraRestriction?) {

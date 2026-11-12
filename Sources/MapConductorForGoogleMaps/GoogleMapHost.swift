@@ -467,9 +467,14 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
                 altitude: 0
             )
         )
+        // ターゲットはパディングを除いた領域の中央（GMSMapView.padding が効いている）。
+        let padding = mapView.padding
         return camera.toMapCameraPosition(
             logicalTiltHint: controller?.lastLogicalTilt,
             visibleRegion: visibleRegion
+        ).copy(
+            paddings: MapPaddings(top: padding.top, left: padding.left, bottom: padding.bottom, right: padding.right),
+            fov: googleMapsVerticalFieldOfView
         )
     }
 
