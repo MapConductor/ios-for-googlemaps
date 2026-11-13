@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = "MapConductorForGoogleMaps"
-  s.version = "1.4.0"
+  s.version = "1.4.1"
   s.summary = "MapConductor's Google Maps provider."
   s.license = { :type => "Apache-2.0", :file => "LICENSE" }
   s.author = "MapConductor"
@@ -9,6 +9,8 @@ Pod::Spec.new do |s|
   s.platform = :ios, "16.0"
   s.swift_version = "5.9"
   s.source_files = "Sources/MapConductorForGoogleMaps/**/*.swift"
+  # GoogleMaps on trunk ships a static xcframework; without this, lint fails with "transitive dependencies that include statically linked binaries".
+  s.static_framework = true
 
   # Compiled from source against the real, officially-published GoogleMaps pod so CocoaPods
   # installs Google's own binary directly into the consuming app - this podspec (and
