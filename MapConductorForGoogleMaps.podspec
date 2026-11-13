@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = "MapConductorForGoogleMaps"
-  s.version = "1.3.1"
+  s.version = "1.4.0"
   s.summary = "MapConductor's Google Maps provider."
   s.license = { :type => "Apache-2.0", :file => "LICENSE" }
   s.author = "MapConductor"
@@ -21,5 +21,5 @@ Pod::Spec.new do |s|
   # CocoaPods 経路（RN の reactnative-for-googlemaps）が解決不能になる。上限を 12.0 未満に
   # しておけば、11.x が trunk に載った時点で自動的にそちらへ上がる。
   s.dependency "GoogleMaps", ">= 10.15", "< 12.0"
-  s.dependency "MapConductorCore"
+  s.dependency "MapConductorCore", "~> 1.4"
 end
