@@ -1,5 +1,5 @@
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import UIKit
 
 @MainActor
@@ -21,7 +21,7 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
         polyline.strokeWidth = CGFloat(state.strokeWidth)
         polyline.geodesic = state.geodesic
         polyline.isTappable = false
-        polyline.zIndex = Int32(state.zIndex)
+        polyline.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.polyline, zIndex: state.zIndex))
         polyline.map = mapView
         polyline.userData = state.id
         return polyline
@@ -50,7 +50,7 @@ final class GoogleMapPolylineOverlayRenderer: AbstractPolylineOverlayRenderer<GM
         }
 
         if finger.zIndex != prevFinger.zIndex {
-            polyline.zIndex = Int32(current.state.zIndex)
+            polyline.zIndex = OverlayStacking.globalZIndex(OverlayStackKey(.polyline, zIndex: current.state.zIndex))
         }
 
         return polyline

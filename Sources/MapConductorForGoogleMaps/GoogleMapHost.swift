@@ -1,6 +1,6 @@
 import Foundation
 import GoogleMaps
-import MapConductorCore
+@_spi(MapConductorDriver) import MapConductorCore
 import UIKit
 
 /// 地図一式（`GMSMapView` + コントローラ群 + オーバーレイ結線）を保持するホスト。
@@ -43,6 +43,9 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     )
 
     func bind(state: GoogleMapViewState, mapView: GMSMapView) {
+        // Google uses a 256-point tile grid. Retina pixels are supplied by the
+        // raster adapter; they must not double the renderer's logical paint size.
+        state.registerRasterTilePreference()
         // Publish marker rendering as a map-scoped capability. Add-on modules resolve it
         // from the registry; this provider never learns that clustering exists.
         state.serviceRegistry.put(MarkerRenderingSupportKey.self, strategyManager)
@@ -70,10 +73,42 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
 
         let polygonController = GoogleMapPolygonController(mapView: mapView)
         self.polygonController = polygonController
-        self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
-
+        // Many polygons are drawn into raster tiles and shown as one tile layer;
+        // taps still resolve against the original shapes.
+        let polygonTiler = PolygonTiler()
+        polygonTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: PolygonTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(PolygonTiler.layerId)
+            }
+        }
+        polygonController.tiler = polygonTiler
+        // Many polylines likewise, in their own raster layer in the polyline band
+        // (under the natively drawn polylines); taps still resolve against the original lines.
+        let polylineTiler = PolylineTiler()
+        polylineTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: PolylineTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(PolylineTiler.layerId)
+            }
+        }
+        polylineController.tiler = polylineTiler
         let circleController = GoogleMapCircleController(mapView: mapView)
         self.circleController = circleController
+
+        let circleTiler = CircleTiler()
+        circleTiler.onTemplate = { [weak rasterController] template, tileSize in
+            if let template {
+                await rasterController?.upsert(state: CircleTiler.rasterLayerState(template: template, tileSize: tileSize))
+            } else {
+                await rasterController?.removeById(CircleTiler.layerId)
+            }
+        }
+        circleController.tiler = circleTiler
+        self.hullPolygonController = GoogleMapPolygonController(mapView: mapView)
+
 
         // Route the simple overlays through the shared collector so each
         // controller subscribes to one source of truth instead of the map
@@ -86,6 +121,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         controller.registerOverlayController(polygonController)
         controller.registerOverlayController(groundImageController)
         controller.registerOverlayController(rasterController)
+        controller.clearOverlaysHandler = { [weak self] in await self?.clearOverlays() }
 
         let overlayScope = MapOverlayScope()
         self.overlayScope = overlayScope
@@ -125,10 +161,25 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         )
     }
 
+    /// android-sdk の `clearOverlays()` と同じく、各オーバーレイのコントローラを空にする。
+    /// `controller.clearOverlaysHandler` から呼ばれる。
+    func clearOverlays() async {
+        await markerController?.clear()
+        await polylineController?.clear()
+        await polygonController?.clear()
+        await groundImageController?.clear()
+        await circleController?.clear()
+        await rasterController?.clear()
+        // strategy（クラスタリングなど）が描いたマーカーも消す。
+        await state.serviceRegistry.clearMarkerRendering()
+    }
+
     public func unbind() {
         // 登録した capability を取り下げる。レジストリの持ち主は state で、ビューより長生きするため、
         // ここで外さないと破棄済みのコントローラを掴んだまま残る。
         state.serviceRegistry.removeProviderRegistrations()
+        // The tile grid stays the same when the live map view is detached.
+        state.registerRasterTilePreference()
         // 登録済みオーバーレイコントローラ（拡張モジュール含む）を破棄する。
         controller?.destroy()
         state.setController(nil)
@@ -160,6 +211,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     public func updateContent(_ content: MapViewContent) {
         if let mapView {
             polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
+            circleController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
         }
         infoBubbleCoordinator?.syncInfoBubbles(content.infoBubbles)
         markerController?.tilingOptions = content.markerTilingOptions
@@ -167,6 +219,11 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
         overlayScope?.circleCollector.sync(content.circles.map { $0.state })
         overlayScope?.polylineCollector.sync(content.polylines.map { $0.state })
         overlayScope?.polygonCollector.sync(content.polygons.map { $0.state })
+        polygonController?.tiler?.refreshIfServerMoved()
+        if polylineController?.tiler?.setOptions(content.polylineTilingOptions) == true { overlayScope?.polylineCollector.flush() }
+        if circleController?.tiler?.setOptions(content.circleTilingOptions) == true { overlayScope?.circleCollector.flush() }
+        polylineController?.tiler?.refreshIfServerMoved()
+        circleController?.tiler?.refreshIfServerMoved()
         overlayScope?.rasterLayerCollector.sync(content.rasterLayers.map { $0.state })
         overlayScope?.groundImageCollector.sync(content.groundImages.map { $0.state })
         for handler in content.polygonSyncHandlers {
@@ -235,6 +292,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
 
     public func mapView(_ mapView: GMSMapView, didTapAt coordinate: CLLocationCoordinate2D) {
         polylineController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
+        circleController?.setCurrentCameraPosition(currentCameraPosition(from: mapView))
         // Tile-rendered markers have no native tap event; hit-test them by screen proximity.
         let screenPoint = mapView.projection.point(for: coordinate)
         if markerController?.handleTiledMarkerTap(at: screenPoint) == true {
@@ -285,6 +343,7 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
     public func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
         let camera = currentCameraPosition(from: mapView)
         state.updateCameraPosition(camera)
+        markerController?.cameraSettled(zoom: camera.zoom)
         controller?.notifyCameraMoveEnd(camera)
         onCameraMoveEnd?(camera)
         Task { [weak self] in
@@ -408,9 +467,20 @@ public final class GoogleMapHost: MapViewCoordinatorBase<GoogleMapViewState>, GM
                 altitude: 0
             )
         )
-        return camera.toMapCameraPosition(
-            logicalTiltHint: controller?.lastLogicalTilt,
-            visibleRegion: visibleRegion
+        // 地図の中心はパディングの分ずらしてある。ターゲット（パディングを除いた領域の中央）へ戻す。
+        let projection = mapView.projection
+        return CameraPaddingEmulation.restored(
+            camera.toMapCameraPosition(
+                logicalTiltHint: controller?.lastLogicalTilt,
+                visibleRegion: visibleRegion
+            ),
+            paddings: controller?.lastPaddings,
+            fov: googleMapsVerticalFieldOfView,
+            viewportSize: mapView.bounds.size,
+            unproject: { point in
+                let coordinate = projection.coordinate(for: point)
+                return GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0)
+            }
         )
     }
 

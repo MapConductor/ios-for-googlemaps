@@ -7,7 +7,7 @@ let frameworkLibraryType: Product.Library.LibraryType? =
 let usingLocalCore = FileManager.default.fileExists(atPath: "../ios-sdk-core/Package.swift")
 let coreDependency: Package.Dependency = usingLocalCore
     ? .package(path: "../ios-sdk-core")
-    : .package(url: "https://github.com/MapConductor/ios-sdk-core", from: "1.1.4")
+    : .package(url: "https://github.com/MapConductor/ios-sdk-core", from: "1.4.0")
 
 let package = Package(
     name: "mapconductor-for-googlemaps",
@@ -24,7 +24,8 @@ let package = Package(
     ],
     dependencies: [
         coreDependency,
-        .package(url: "https://github.com/googlemaps/ios-maps-sdk", from: "11.0.0"),
+        // 11.3.0 から iOS 17 が必要。iOS 16 を保つため 11.2.x に留める。
+        .package(url: "https://github.com/googlemaps/ios-maps-sdk", "11.2.0"..<"11.3.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -35,6 +36,10 @@ let package = Package(
                 .product(name: "MapConductorCore", package: "ios-sdk-core"),
                 .product(name: "GoogleMaps", package: "ios-maps-sdk"),
             ],
+        ),
+        .testTarget(
+            name: "MapConductorForGoogleMapsTests",
+            dependencies: ["MapConductorForGoogleMaps"]
         ),
     ]
 )
